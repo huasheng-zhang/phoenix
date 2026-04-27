@@ -6,12 +6,13 @@ The main Phoenix Agent implementation that orchestrates:
 - Tool execution
 - State management
 - Conversation flow
+- Skill management
 """
 
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Callable, Iterator
+from typing import Any, Dict, List, Optional, Callable, Iterator, TYPE_CHECKING
 
 from phoenix_agent.core.config import Config, get_config
 from phoenix_agent.core.message import Message, Role, MessageHistory
@@ -19,6 +20,9 @@ from phoenix_agent.core.state import SessionState
 from phoenix_agent.providers.base import LLMResponse
 from phoenix_agent.providers.openai import create_provider
 from phoenix_agent.tools.registry import ToolRegistry, ToolResult
+
+if TYPE_CHECKING:
+    from phoenix_agent.skills.skill import Skill
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +72,14 @@ class Agent:
         self.iteration_count = 0
         self.max_iterations = self.config.agent.max_iterations
 
+        # Skill support
+        self._active_skill: Optional["Skill"] = None
+        self._skill_registry = None  # lazy-init
+
         # Callbacks
         self.on_tool_call: Optional[Callable] = None
         self.on_response: Optional[Callable] = None
+        self.on_skill_change: Optional[Callable] = None
 
         logger.info("Phoenix Agent initialized with model: %s", self.config.provider.model)
 
@@ -116,17 +125,29 @@ class Agent:
         # Reset iteration counter for this turn
         self.iteration_count = 0
 
+        # Auto-match skill if none is active
+        if not self._active_skill:
+            try:
+                registry = self._get_skill_registry()
+                registry.discover()
+                matched = registry.match(user_input)
+                if matched:
+                    self.use_skill(matched)
+            except Exception:
+                logger.debug("Skill auto-match failed, continuing without skill", exc_info=True)
+
         # Add user message to history
         user_msg = Message.user(user_input)
         self.history.add_message(user_msg)
         self.session.add_message(role="user", content=user_input)
 
-        # Build system message
-        system_msg = Message.system(self.system_prompt)
+        # Build system message (skill-aware)
+        effective_prompt = self._build_effective_system_prompt()
+        system_msg = Message.system(effective_prompt)
         messages_for_api = [system_msg.to_dict()] + self.history.get_messages_for_api()
 
-        # Get tool definitions
-        enabled_tools = self.config.tools.enabled
+        # Get tool definitions (skill-aware)
+        enabled_tools = self._build_effective_tool_filter()
         tool_definitions = self.tools.get_definitions(
             enabled=enabled_tools if enabled_tools else None,
             disabled=self.config.tools.disabled,
@@ -300,6 +321,101 @@ class Agent:
             results.append(tool_msg.to_dict())
 
         return results
+
+    # ==================================================================
+    # Skill management
+    # ==================================================================
+
+    def _get_skill_registry(self):
+        """Lazily import and return the SkillRegistry singleton."""
+        if self._skill_registry is None:
+            from phoenix_agent.skills.registry import SkillRegistry
+            self._skill_registry = SkillRegistry.get_instance()
+        return self._skill_registry
+
+    def use_skill(self, skill: "Skill") -> None:
+        """
+        Activate a skill on this agent.
+
+        When active, the skill's system prompt is prepended to the base
+        prompt and any skill-specific tools become available.
+
+        Args:
+            skill: A ``Skill`` instance (must already be loaded).
+        """
+        if not skill.is_loaded:
+            skill.load()
+
+        self._active_skill = skill
+        logger.info("Agent now using skill: %s", skill.name)
+
+        # Fire callback
+        if self.on_skill_change:
+            try:
+                self.on_skill_change(skill.name, "activated")
+            except Exception:
+                pass
+
+    def clear_skill(self) -> Optional[str]:
+        """
+        Deactivate the current skill.
+
+        Returns:
+            Name of the deactivated skill, or ``None`` if no skill was active.
+        """
+        if not self._active_skill:
+            return None
+
+        name = self._active_skill.name
+        self._active_skill = None
+        logger.info("Skill deactivated: %s", name)
+
+        if self.on_skill_change:
+            try:
+                self.on_skill_change(name, "deactivated")
+            except Exception:
+                pass
+
+        return name
+
+    @property
+    def active_skill(self) -> Optional["Skill"]:
+        """Return the currently active skill, if any."""
+        return self._active_skill
+
+    def _build_effective_system_prompt(self) -> str:
+        """Build the system prompt, incorporating the active skill if set."""
+        base = self.system_prompt
+        if self._active_skill and self._active_skill.system_prompt:
+            skill_prompt = self._active_skill.system_prompt
+            return (
+                f"{base}\n\n"
+                f"# Active Skill: {self._active_skill.name}\n\n"
+                f"{skill_prompt}"
+            )
+        return base
+
+    def _build_effective_tool_filter(self) -> List[str]:
+        """Build the tool filter list, incorporating skill tool requirements."""
+        enabled = list(self.config.tools.enabled) if self.config.tools.enabled else []
+
+        if self._active_skill:
+            # Ensure skill-required tools are enabled
+            for tool_name in self._active_skill.manifest.tools:
+                if tool_name not in enabled:
+                    enabled.append(tool_name)
+            # Also enable skill-specific tools by name prefix
+            for tool_extra in self._active_skill.manifest.tools_extra:
+                skill_tool_name = f"{self._active_skill.name}."
+                # The registered tool names are like "skillname.funcname"
+                # We need to pass them explicitly so get_definitions includes them
+                if ":" in tool_extra:
+                    _, func_name = tool_extra.rsplit(":", 1)
+                    full_name = f"{self._active_skill.name}.{func_name}"
+                    if full_name not in enabled:
+                        enabled.append(full_name)
+
+        return enabled
 
     def reset(self) -> None:
         """Reset the agent state for a new conversation."""

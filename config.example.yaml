@@ -184,3 +184,34 @@ channels:
     superusers: []                        # Telegram user IDs with admin access
     command_prefix: "/"
 
+# ============================================================================
+# Skill Configuration (extensible capability bundles)
+# ============================================================================
+# Skills are auto-discovered from:
+#   ~/.phoenix/skills/       (user-level, all projects)
+#   ./skills/                (project-level, current directory)
+#
+# Set PHOENIX_SKILL_PATHS env var to add extra search paths (semicolon on Windows).
+#
+# CLI:
+#   phoenix skill list              # list all skills
+#   phoenix skill show <name>       # show skill details
+#   phoenix skill create <name>     # scaffold a new skill
+#
+# When a user message matches a skill's trigger patterns, the skill is
+# automatically activated for that turn (its system prompt and tools are
+# injected into the agent loop).
+# ============================================================================
+skills:
+  # Enable auto-matching (default: true)
+  auto_match: true
+
+  # Extra skill search directories
+  # extra_paths:
+  #   - /path/to/my/skills
+
+  # Skill-specific settings overrides (optional)
+  # settings:
+  #   my-skill:
+  #     max_rows: 5000
+

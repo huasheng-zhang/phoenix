@@ -23,13 +23,6 @@ COPY pyproject.toml ./
 RUN pip install --upgrade pip setuptools wheel && \
     pip install -e ".[all]"
 
-# Runtime deps that are used by channels but not yet in pyproject.toml
-RUN pip install \
-    aiohttp \
-    uvicorn[standard] \
-    starlette \
-    dingtalk-stream
-
 # ── Application code ─────────────────────────────────────────────────
 COPY src/ ./src/
 COPY config.example.yaml ./
