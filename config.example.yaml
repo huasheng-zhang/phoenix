@@ -47,6 +47,10 @@ agent:
   # Show thinking/reasoning in output
   show_thinking: false
 
+  # Context window management (prevent context overflow)
+  # max_history_messages: 100          # Keep at most N messages in context
+  # max_context_tokens: 120000         # Hard token budget for history (estimate)
+
 # Tool Configuration
 tools:
   # Enabled tool categories

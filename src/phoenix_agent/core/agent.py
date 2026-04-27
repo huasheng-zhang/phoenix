@@ -144,7 +144,16 @@ class Agent:
         # Build system message (skill-aware)
         effective_prompt = self._build_effective_system_prompt()
         system_msg = Message.system(effective_prompt)
-        messages_for_api = [system_msg.to_dict()] + self.history.get_messages_for_api()
+
+        # Build truncated history (respect context limits)
+        history_messages = self.history.get_truncated_messages(
+            max_messages=self.config.agent.max_history_messages,
+            max_tokens=self.config.agent.max_context_tokens,
+        )
+        messages_for_api = (
+            [system_msg.to_dict()]
+            + [msg.to_dict() for msg in history_messages]
+        )
 
         # Get tool definitions (skill-aware)
         enabled_tools = self._build_effective_tool_filter()

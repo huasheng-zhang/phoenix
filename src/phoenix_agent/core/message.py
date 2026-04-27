@@ -5,11 +5,15 @@ Defines the core message types used throughout Phoenix Agent.
 Messages are the primary data structure for agent communication.
 """
 
+import re
 import time
 import uuid
+import logging
 from typing import Optional, List, Dict, Any, Literal
 from dataclasses import dataclass, field, asdict
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class Role(str, Enum):
@@ -285,6 +289,12 @@ class MessageHistory:
     managing conversation state.
     """
 
+    # Regex to detect CJK characters for token estimation.
+    _CJK_RE = re.compile(
+        r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
+        r"\u3000-\u303f\uff00-\uffef\uac00-\ud7af]"
+    )
+
     def __init__(self):
         self.messages: List[Message] = []
         self.turns: List[ConversationTurn] = []
@@ -310,6 +320,144 @@ class MessageHistory:
         Converts Message objects to dictionaries.
         """
         return [msg.to_dict() for msg in self.messages]
+
+    def get_truncated_messages(
+        self,
+        max_messages: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+    ) -> List[Message]:
+        """
+        Return a truncated view of message history.
+
+        Both limits apply independently — the stricter one wins:
+
+        * **max_messages**: keep at most *max_messages* most-recent messages.
+        * **max_tokens**: estimate token count of messages (old → new) and
+          drop the oldest ones until the total stays under *max_tokens*.
+
+        Truncation prefers to keep complete turns (user/assistant/tool groups)
+        intact rather than cutting in the middle of a tool-call sequence.
+
+        Args:
+            max_messages: Maximum number of messages to retain.
+            max_tokens: Maximum estimated token budget.
+
+        Returns:
+            A (possibly shorter) list of Message objects.
+        """
+        if not self.messages:
+            return []
+
+        result = list(self.messages)
+
+        # --- Message count limit -------------------------------------------
+        if max_messages is not None and len(result) > max_messages:
+            result = result[-max_messages:]
+
+        # --- Token budget limit --------------------------------------------
+        if max_tokens is not None and max_tokens > 0:
+            result = self._trim_by_tokens(result, max_tokens)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Token estimation helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def estimate_tokens(cls, text: str) -> int:
+        """
+        Estimate the number of tokens in *text*.
+
+        Uses a conservative heuristic:
+        * CJK characters: ~1 token per 1.5 characters
+        * Non-CJK (Latin, digits, whitespace, punctuation): ~1 token per 4 characters
+
+        This intentionally over-estimates by ~20-30 % to stay safely
+        under the real context window.
+        """
+        if not text:
+            return 0
+
+        cjk_chars = len(cls._CJK_RE.findall(text))
+        other_chars = len(text) - cjk_chars
+        return int(cjk_chars / 1.5) + int(other_chars / 4) + 1
+
+    def estimate_total_tokens(self, messages: Optional[List[Message]] = None) -> int:
+        """Estimate total token count for a list of messages."""
+        if messages is None:
+            messages = self.messages
+        total = 0
+        for msg in messages:
+            total += self.estimate_tokens(msg.content or "")
+            # Budget for role/formatting overhead per message
+            total += 4
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    total += self.estimate_tokens(tc.arguments) + 8
+        return total
+
+    def _trim_by_tokens(self, messages: List[Message], max_tokens: int) -> List[Message]:
+        """
+        Drop oldest messages until the estimated token count fits.
+
+        Tries to preserve complete conversation turns when possible.
+        """
+        total = self.estimate_total_tokens(messages)
+        if total <= max_tokens:
+            return messages
+
+        # Build a list of per-message token costs.
+        costs = [self._msg_token_cost(m) for m in messages]
+
+        # We want to drop the oldest prefix while keeping recent context.
+        # Strategy: walk from the front, accumulate tokens to drop, stop
+        # once the remaining budget fits.
+        keep_from = 0
+        for i, cost in enumerate(costs):
+            total -= cost
+            keep_from = i + 1
+            if total <= max_tokens:
+                break
+
+        if keep_from >= len(messages):
+            # Even a single message may not fit — return just the last one.
+            logger.warning(
+                "Context window too small: single message exceeds %d tokens",
+                max_tokens,
+            )
+            return [messages[-1]]
+
+        trimmed = messages[keep_from:]
+
+        # Prefer turn boundaries: if the first kept message is a tool or
+        # assistant message, look back to include the user message that
+        # started the turn, unless that would bust the budget.
+        if trimmed and trimmed[0].role not in (Role.USER, Role.SYSTEM):
+            if keep_from > 0:
+                candidate = messages[keep_from - 1]
+                if candidate.role == Role.USER:
+                    extra = self._msg_token_cost(candidate)
+                    new_total = self.estimate_total_tokens(trimmed) + extra
+                    if new_total <= max_tokens:
+                        trimmed = [candidate] + trimmed
+
+        dropped = keep_from
+        logger.info(
+            "Trimmed %d oldest messages to fit %d-token budget "
+            "(estimated %d tokens after trim)",
+            dropped, max_tokens, self.estimate_total_tokens(trimmed),
+        )
+        return trimmed
+
+    @classmethod
+    def _msg_token_cost(cls, msg: Message) -> int:
+        """Return the estimated token cost of a single message."""
+        cost = cls.estimate_tokens(msg.content or "") + 4  # +4 role overhead
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                cost += cls.estimate_tokens(tc.arguments) + 8
+        return cost
 
     def get_last_n_messages(self, n: int) -> List[Message]:
         """Get the last n messages."""

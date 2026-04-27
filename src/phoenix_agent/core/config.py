@@ -125,6 +125,14 @@ class AgentConfig:
     stream: bool = True
     show_thinking: bool = False
 
+    # Context window management
+    max_history_messages: Optional[int] = None
+    # Hard token budget for conversation history (excluding system prompt).
+    # When set, old messages are trimmed to keep total tokens under this limit.
+    # Uses a conservative estimate: ~1 token per 4 chars for English,
+    # ~1 token per 1.5 chars for CJK.  Default: None (no limit).
+    max_context_tokens: Optional[int] = None
+
 
 @dataclass
 class ToolConfig:
