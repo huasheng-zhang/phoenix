@@ -94,18 +94,22 @@ class PhoenixScheduler:
             return
 
         for t in task_dicts:
-            if not isinstance(t, dict):
+            # Support both dict and SchedulerTaskConfig objects
+            if isinstance(t, SchedulerTaskConfig):
+                task_cfg = t
+            elif isinstance(t, dict):
+                task_cfg = SchedulerTaskConfig(
+                    name=t.get("name", f"task-{uuid.uuid4().hex[:8]}"),
+                    cron=t.get("cron", "0 9 * * *"),
+                    prompt=t.get("prompt", ""),
+                    channel=t.get("channel", "dingtalk"),
+                    chat_id=t.get("chat_id", ""),
+                    skill=t.get("skill"),
+                    enabled=t.get("enabled", True),
+                    timezone=t.get("timezone", timezone),
+                )
+            else:
                 continue
-            task_cfg = SchedulerTaskConfig(
-                name=t.get("name", f"task-{uuid.uuid4().hex[:8]}"),
-                cron=t.get("cron", "0 9 * * *"),
-                prompt=t.get("prompt", ""),
-                channel=t.get("channel", "dingtalk"),
-                chat_id=t.get("chat_id", ""),
-                skill=t.get("skill"),
-                enabled=t.get("enabled", True),
-                timezone=t.get("timezone", timezone),
-            )
             if task_cfg.enabled and task_cfg.prompt:
                 self._task_configs.append(task_cfg)
 
@@ -157,9 +161,10 @@ class PhoenixScheduler:
             misfire_grace_time=60,
         )
         self._job_ids[task_cfg.name] = job.id
+        next_run = getattr(job, "next_run_time", None)
         logger.info(
             "Scheduled task '%s': cron=%s, next_run=%s",
-            task_cfg.name, task_cfg.cron, job.next_run_time,
+            task_cfg.name, task_cfg.cron, next_run,
         )
 
     def _execute_task(self, task_cfg: SchedulerTaskConfig) -> None:
