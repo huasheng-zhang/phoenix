@@ -228,16 +228,19 @@ def run_server(
 
     cfg = config or get_config()
 
-    # --- Start scheduler (if enabled in config) ---
+    # --- Scheduler singleton (always created so Agent tools can add/remove tasks) ---
     scheduler = None
-    if cfg.scheduler and cfg.scheduler.enabled:
-        try:
-            scheduler = PhoenixScheduler(config=cfg)
+    try:
+        scheduler = PhoenixScheduler(config=cfg)
+        # Only start the APScheduler loop if tasks exist in config
+        if scheduler._task_configs:
             scheduler.start()
             logger.info("Scheduler started with %d task(s).", len(scheduler.list_tasks()))
-        except Exception as exc:
-            logger.warning("Failed to start scheduler: %s", exc)
-            scheduler = None
+        else:
+            logger.info("Scheduler singleton registered (no tasks in config yet).")
+    except Exception as exc:
+        logger.warning("Failed to initialize scheduler: %s", exc)
+        scheduler = None
 
     # env > config > function args
     env_host = os.environ.get("PHOENIX_CHANNEL_HOST", "").strip()

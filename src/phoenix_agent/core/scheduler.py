@@ -95,8 +95,10 @@ class PhoenixScheduler:
 
         if self._task_configs:
             self._init_scheduler()
+            self.start()
 
-        # Register as singleton so builtin tools can reach it
+        # Always register as singleton — even when scheduler is initially
+        # disabled — so Agent tools can call add/remove and hot-activate it.
         _scheduler_instance = self
 
     def _load_tasks_from_config(self) -> None:
