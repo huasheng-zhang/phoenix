@@ -192,7 +192,12 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             response_text = f"⚠️ 处理消息时出错：{exc}"
 
         reply_text = response_text or "(no response)"
-        await self.reply_text(reply_text, incoming)
+        # reply_text() is sync (uses requests.post), run in executor to avoid
+        # blocking the event loop — this was causing slow responses
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, lambda: self.reply_text(reply_text, incoming)
+        )
 
         # If the agent produced file paths in its response, try to send them
         # as file attachments via OpenAPI
@@ -338,14 +343,23 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 response_text = f"⚠️ 处理文件时出错：{exc}"
 
             reply_text = response_text or "文件已收到，但未生成回复。"
-            await self.reply_text(reply_text, incoming)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, lambda: self.reply_text(reply_text, incoming)
+            )
 
         except ChannelAPIError as exc:
             self._logger.error("[dingtalk][stream] File API error: %s", exc)
-            await self.reply_text(f"⚠️ 下载文件失败：{exc}", incoming)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, lambda: self.reply_text(f"⚠️ 下载文件失败：{exc}", incoming)
+            )
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] File handling error: %s", exc)
-            await self.reply_text(f"⚠️ 处理文件时出错：{exc}", incoming)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, lambda: self.reply_text(f"⚠️ 处理文件时出错：{exc}", incoming)
+            )
 
     @staticmethod
     def _extract_file_content(
