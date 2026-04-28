@@ -61,3 +61,9 @@ send_guide.md
 *.bak
 *.tmp
 *.log
+*_result.txt
+*_out.txt
+*_err.txt
+
+# Misc temp dirs
+ai_news_notifier/
