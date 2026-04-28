@@ -145,6 +145,10 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         sender_id = str(incoming.sender_staff_id or "")
         sender_name = incoming.sender_nick or sender_id
 
+        # Extract conversation_id early — needed for both file and text handlers
+        conversation_id = str(getattr(incoming, "conversation_id", "") or "")
+        chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
+
         self._logger.info(
             "[dingtalk][stream] Message from %s (%s): msgtype=%s",
             sender_name, sender_id, msg_type_raw,
@@ -173,8 +177,6 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         )
 
         # Resolve per-conversation agent from pool
-        conversation_id = str(getattr(incoming, "conversation_id", "") or "")
-        chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
         agent = self._pool.get_agent(self._channel_name, chat_key)
 
         try:
