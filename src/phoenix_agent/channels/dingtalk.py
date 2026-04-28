@@ -112,6 +112,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         openapi: Optional[DingTalkOpenAPI] = None,
         download_dir: Optional[str] = None,
         robot_code: Optional[str] = None,
+        channel_ref: Optional["DingTalkChannel"] = None,  # Reference to parent channel
     ):
         super().__init__()
         self._pool = pool
@@ -121,6 +122,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         self._openapi = openapi
         self._download_dir = download_dir or os.path.expanduser("~/.phoenix/downloads")
         self._robot_code = robot_code or ""
+        self._channel_ref = channel_ref  # For updating last active session
 
     def process(self, callback: dingtalk_stream.CallbackMessage):
         """Must be synchronous. Dispatches async work to the event loop."""
@@ -155,6 +157,13 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             sender_name, sender_id, msg_type_raw,
             conversation_id[:20] if conversation_id else "(none)",
         )
+
+        # Track last active conversation for scheduled task push
+        if self._channel_ref:
+            if conversation_id:
+                self._channel_ref._last_conversation_id = conversation_id
+            if sender_id:
+                self._channel_ref._last_sender_id = sender_id
 
         # ---- Handle file/image messages ----
         if msg_type_raw in ("picture", "file") and self._openapi:
@@ -446,6 +455,10 @@ class DingTalkChannel(BaseChannel):
         self._stream_client: Optional[Any] = None
         self._openapi: Optional[DingTalkOpenAPI] = None
 
+        # Track last active conversation for scheduled task push
+        self._last_conversation_id: Optional[str] = None  # 群聊会话ID (oc_xxx)
+        self._last_sender_id: Optional[str] = None        # 单聊用户ID
+
     # ------------------------------------------------------------------
     # Signature helpers (for internal/webhook mode)
     # ------------------------------------------------------------------
@@ -653,6 +666,7 @@ class DingTalkChannel(BaseChannel):
             openapi=self._openapi,
             download_dir=self._download_dir,
             robot_code=self._client_id,
+            channel_ref=self,  # Pass self for session tracking
         )
 
         # Capture the event loop reference for cross-thread dispatch

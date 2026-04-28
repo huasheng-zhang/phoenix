@@ -282,24 +282,45 @@ class PhoenixScheduler:
             logger.error("DingTalk robot_code not found.")
             return
 
+        # 确定推送目标
+        target_conversation_id = getattr(channel, "_last_conversation_id", None) or ""
+        target_sender_id = getattr(channel, "_last_sender_id", None) or ""
+
+        # 如果 config.yaml 中没有配置 chat_id，自动使用最近活跃会话
+        effective_chat_id = chat_id.strip() if chat_id else ""
+
+        if not effective_chat_id:
+            if target_conversation_id:
+                effective_chat_id = target_conversation_id
+                logger.info("[scheduler] No chat_id configured, using last conversation: %s",
+                            target_conversation_id[:20])
+            elif target_sender_id:
+                effective_chat_id = target_sender_id
+                logger.info("[scheduler] No chat_id configured, using last sender: %s",
+                            target_sender_id)
+            else:
+                logger.warning("No chat_id configured and no recent conversation found. "
+                               "Please send a message to the bot first, or set chat_id in config.yaml.")
+                return
+
         try:
             import asyncio
             loop = asyncio.get_event_loop()
             # 判断 chat_id 格式：群会话ID通常以 "oc_" 开头
-            if chat_id.startswith("oc_"):
+            if effective_chat_id.startswith("oc_"):
                 # 群聊消息
                 loop.run_until_complete(
                     openapi.send_text_to_group(
                         robot_code=robot_code,
-                        conversation_id=chat_id,
+                        conversation_id=effective_chat_id,
                         content=message,
                     )
                 )
             else:
                 # 单聊消息，chat_id 是用户 ID 列表（逗号分隔）或单个用户ID
-                user_ids = [uid.strip() for uid in chat_id.split(",") if uid.strip()]
+                user_ids = [uid.strip() for uid in effective_chat_id.split(",") if uid.strip()]
                 if not user_ids:
-                    logger.warning("No valid user IDs in chat_id: %r", chat_id)
+                    logger.warning("No valid user IDs in chat_id: %r", effective_chat_id)
                     return
                 loop.run_until_complete(
                     openapi.send_text_to_user(
@@ -308,7 +329,7 @@ class PhoenixScheduler:
                         content=message,
                     )
                 )
-            logger.info("[scheduler] DingTalk push success for chat_id: %s", chat_id[:20])
+            logger.info("[scheduler] DingTalk push success for chat_id: %s", effective_chat_id[:20])
         except Exception as e:
             logger.error("DingTalk send error: %s", e)
 
