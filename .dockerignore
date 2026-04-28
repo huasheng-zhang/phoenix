@@ -1,6 +1,8 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
 *.egg-info/
 *.egg
 dist/
@@ -19,20 +21,23 @@ env/
 *.swo
 
 # Tests
+tests/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
 .coverage
 coverage.xml
+pytest.ini
 
 # Git
 .git/
 .gitignore
 
 # Local test / scratch scripts
-send_dingtalk_file.py
-test_dingtalk_stream.py
+send_*.py
+test_*.py
+运维常用命令.txt
 
 # Phoenix runtime data (mounted as volume)
 .phoenix/
@@ -51,3 +56,13 @@ Thumbs.db
 Dockerfile*
 .dockerignore
 docker-compose*.yml
+
+# Misc (not part of the app)
+cli/
+core/
+providers/
+storage/
+tools/
+~/
+desktop_scripts_backup/
+hermes-agent/
