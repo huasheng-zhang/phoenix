@@ -1,0 +1,16 @@
+name: sysadmin
+version: "1.0.0"
+description: 系统运维助手，帮助排查服务器问题、管理进程、分析日志、运维脚本编写。
+triggers:
+  - 服务器|运维|ops|devops
+  - 部署|deploy|发布|上线
+  - 日志.*分析|log.*分析|排查.*问题
+  - docker|k8s|kubernetes|容器
+  - cpu.*高|内存.*高|磁盘.*满|负载|load
+  - nginx.*配置|ssl.*证书|防火墙
+  - systemd|supervisor|pm2|crontab
+tools:
+  - run_command
+  - read_file
+  - write_file
+  - web_search

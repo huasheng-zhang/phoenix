@@ -1,0 +1,11 @@
+name: translator
+version: "1.0.0"
+description: 多语言翻译助手，支持中英日韩等主流语言的互译，懂技术术语。
+triggers:
+  - 翻译|translate|translation
+  - 用英文说|用中文说|用日语说|用韩语说
+  - 英文翻译|中文翻译|日文翻译|韩文翻译
+  - 这个.*用.*怎么说
+  - translate.to|translate.from
+tools:
+  - web_search

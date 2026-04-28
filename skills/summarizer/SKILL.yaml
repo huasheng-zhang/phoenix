@@ -1,0 +1,13 @@
+name: summarizer
+version: "1.0.0"
+description: 智能内容摘要助手，支持长文、会议记录、技术文档等多种内容的精炼总结。
+triggers:
+  - 总结|摘要|概要|浓缩
+  - summarize|summary|tldr|brief
+  - 帮我.*总结|提取.*要点
+  - 这篇文章.*讲了什么
+  - 会议纪要|会议记录
+tools:
+  - read_file
+  - web_search
+  - web_fetch
