@@ -45,6 +45,7 @@ def load_builtin_tools(registry: ToolRegistry) -> None:
     _register_web_tools(registry)
     _register_system_tools(registry)
     _register_utility_tools(registry)
+    _register_scheduler_tools(registry)
 
 
 # ---------------------------------------------------------------------------
@@ -1013,3 +1014,203 @@ def _register_utility_tools(registry: ToolRegistry) -> None:
           },
           "required": ["query"]},
          ToolCategory.UTILITY, recall_memory)
+
+
+# ---------------------------------------------------------------------------
+# SCHEDULER TOOLS  (read / write config.yaml; server restart required to apply)
+# ---------------------------------------------------------------------------
+
+def _scheduler_config_path() -> Optional[Path]:
+    """Locate the active config.yaml."""
+    from phoenix_agent.core.config import get_config
+    try:
+        cfg = get_config()
+        # Config._path holds the path used at load time
+        return getattr(cfg, "_path", None)
+    except Exception:
+        return None
+
+
+def _read_scheduler_tasks() -> dict:
+    """Return the current scheduler section from config.yaml as a plain dict."""
+    path = _scheduler_config_path()
+    if not path or not path.exists():
+        return {}
+    import yaml
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return data.get("scheduler", {})
+    except Exception:
+        return {}
+
+
+def _write_scheduler_section(scheduler_data: dict) -> None:
+    """Overwrite the scheduler section in config.yaml."""
+    path = _scheduler_config_path()
+    if not path or not path.exists():
+        return
+    import yaml
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        data["scheduler"] = scheduler_data
+        path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+                        encoding="utf-8")
+    except Exception:
+        pass
+
+
+def list_scheduled_tasks() -> str:
+    """
+    List all configured scheduled tasks with their settings.
+
+    Returns a table of tasks: name, cron, channel, chat_id, enabled, skill.
+    """
+    try:
+        tasks = _read_scheduler_tasks().get("tasks", [])
+        if not tasks:
+            return ToolResult(success=True,
+                              content="No scheduled tasks configured.\n"
+                                      "Use add_scheduled_task to create one.").to_json()
+        lines = [f"{'Name':<20} {'Cron':<15} {'Channel':<10} {'Chat ID':<20} {'Skill':<15} Enabled"]
+        lines.append("-" * 95)
+        for t in tasks:
+            lines.append(
+                f"{t.get('name',''):<20} {t.get('cron',''):<15} "
+                f"{t.get('channel',''):<10} {t.get('chat_id',''):<20} "
+                f"{str(t.get('skill','')):<15} {t.get('enabled', True)}"
+            )
+        header = (f"Scheduled Tasks ({len(tasks)} total)\n"
+                  f"Note: Changes require server restart to take effect.\n\n")
+        return ToolResult(success=True, content=header + "\n".join(lines)).to_json()
+    except Exception as exc:
+        return ToolResult(success=False, content="",
+                          error=f"Failed to list tasks: {exc}").to_json()
+
+
+def add_scheduled_task(
+    name: str,
+    cron: str,
+    prompt: str,
+    channel: str = "dingtalk",
+    chat_id: str = "",
+    skill: Optional[str] = None,
+    timezone: str = "Asia/Shanghai",
+) -> str:
+    """
+    Add a new scheduled task. The server must be restarted for changes to take effect.
+
+    Args:
+        name:    Unique task name (used as job ID).
+        cron:    Cron expression, e.g. "0 9 * * *" (every day at 9:00).
+        prompt:  The prompt executed by the agent when the task fires.
+        channel: Target channel: dingtalk / wechat / telegram / qq.
+        chat_id: Channel-specific chat/conversation ID to push results to.
+        skill:   Optional skill name to activate before running the prompt.
+        timezone: Timezone for the cron expression (default: Asia/Shanghai).
+    """
+    import re
+    if not re.match(r"^[\w\-]+$", name):
+        return ToolResult(success=False, content="",
+                          error="name must be alphanumeric or hyphen only").to_json()
+    if not cron or not prompt:
+        return ToolResult(success=False, content="",
+                          error="cron and prompt are required").to_json()
+
+    try:
+        scheduler_data = _read_scheduler_tasks()
+        tasks = scheduler_data.get("tasks", [])
+
+        # Prevent duplicate names
+        if any(t.get("name") == name for t in tasks):
+            return ToolResult(success=False, content="",
+                              error=f"A task named '{name}' already exists. "
+                                    "Use remove_scheduled_task first.").to_json()
+
+        new_task = {
+            "name": name,
+            "cron": cron,
+            "prompt": prompt,
+            "channel": channel,
+            "chat_id": chat_id,
+            "skill": skill,
+            "timezone": timezone,
+            "enabled": True,
+        }
+        tasks.append(new_task)
+        scheduler_data["tasks"] = tasks
+        scheduler_data["enabled"] = scheduler_data.get("enabled", True)
+        _write_scheduler_section(scheduler_data)
+
+        return ToolResult(success=True,
+                          content=f"Task '{name}' added successfully.\n"
+                                  f"  cron: {cron}\n"
+                                  f"  channel: {channel}\n"
+                                  f"  chat_id: {chat_id}\n"
+                                  f"  skill: {skill or '(none)'}\n\n"
+                                  f"Restart the Phoenix server to apply changes.").to_json()
+    except Exception as exc:
+        return ToolResult(success=False, content="",
+                          error=f"Failed to add task: {exc}").to_json()
+
+
+def remove_scheduled_task(name: str) -> str:
+    """
+    Remove a scheduled task by name. The server must be restarted for changes to take effect.
+
+    Args:
+        name: The name of the task to remove.
+    """
+    try:
+        scheduler_data = _read_scheduler_tasks()
+        tasks = scheduler_data.get("tasks", [])
+        original = len(tasks)
+        tasks = [t for t in tasks if t.get("name") != name]
+        if len(tasks) == original:
+            return ToolResult(success=False, content="",
+                              error=f"No task named '{name}' found.").to_json()
+
+        scheduler_data["tasks"] = tasks
+        _write_scheduler_section(scheduler_data)
+
+        return ToolResult(success=True,
+                          content=f"Task '{name}' removed.\n"
+                                  f"Restart the Phoenix server to apply changes.").to_json()
+    except Exception as exc:
+        return ToolResult(success=False, content="",
+                          error=f"Failed to remove task: {exc}").to_json()
+
+
+def _register_scheduler_tools(registry: ToolRegistry) -> None:
+    """Register all scheduler management tools."""
+    _reg(registry, "list_scheduled_tasks",
+         "List all configured scheduled tasks with their name, cron expression, "
+         "channel, chat_id, skill, and enabled status. "
+         "Changes require a server restart to take effect.",
+         {"type": "object", "properties": {}, "required": []},
+         ToolCategory.UTILITY, list_scheduled_tasks)
+
+    _reg(registry, "add_scheduled_task",
+         "Add a new cron-based scheduled task. The agent will run the given prompt "
+         "at the scheduled time and push the result to the specified channel/chat_id. "
+         "Server restart required to apply changes.",
+         {"type": "object",
+          "properties": {
+              "name":     {"type": "string",  "description": "Unique task name (alphanumeric/hyphen only)"},
+              "cron":     {"type": "string",  "description": "Cron expression, e.g. '0 9 * * *' (daily 9 AM) or '0 */2 * * *' (every 2 hours)"},
+              "prompt":   {"type": "string",  "description": "Prompt executed by the agent when the task fires"},
+              "channel":  {"type": "string",  "description": "Push channel: dingtalk / wechat / telegram / qq (default: dingtalk)"},
+              "chat_id":  {"type": "string",  "description": "Target chat/conversation ID in the chosen channel"},
+              "skill":    {"type": "string",  "description": "Optional skill name to activate before running the prompt"},
+              "timezone": {"type": "string",  "description": "Timezone for cron, e.g. Asia/Shanghai (default)"},
+          },
+          "required": ["name", "cron", "prompt"]},
+         ToolCategory.UTILITY, add_scheduled_task)
+
+    _reg(registry, "remove_scheduled_task",
+         "Remove a scheduled task by name. Server restart required to apply changes.",
+         {"type": "object",
+          "properties": {
+              "name": {"type": "string", "description": "Name of the task to remove"},
+          },
+          "required": ["name"]},
+         ToolCategory.UTILITY, remove_scheduled_task)

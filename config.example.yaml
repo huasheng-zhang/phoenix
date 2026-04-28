@@ -241,8 +241,55 @@ skills:
   # extra_paths:
   #   - /path/to/my/skills
 
-  # Skill-specific settings overrides (optional)
-  # settings:
-  #   my-skill:
-  #     max_rows: 5000
+# Skill-specific settings overrides (optional)
+# settings:
+#   my-skill:
+#     max_rows: 5000
+
+# ============================================================================
+# Scheduler Configuration (cron-based automated tasks)
+# ============================================================================
+# Phoenix Agent can run scheduled tasks at specified times using cron syntax.
+# When a task fires, the agent executes the configured prompt and pushes
+# the result to the specified channel/chat_id.
+#
+# CLI: phoenix scheduler list / add / remove  (TBD)
+#
+# Important: Changes require server restart to take effect.
+# ============================================================================
+# scheduler:
+#   enabled: true
+#   timezone: Asia/Shanghai
+#   tasks:
+#     # Example 1: Daily weather briefing at 09:00 on weekdays
+#     - name: "daily-weather"
+#       cron: "0 9 * * 1-5"
+#       prompt: "查询深圳今天天气，生成简短摘要，列出穿衣建议"
+#       channel: dingtalk
+#       chat_id: "your_chat_id@chat"
+#       skill: null
+#
+#     # Example 2: Every 2-hour heartbeat check
+#     - name: "heartbeat-check"
+#       cron: "0 */2 * * *"
+#       prompt: "检查系统健康状态，如果有问题请报警"
+#       channel: dingtalk
+#       chat_id: "your_chat_id@chat"
+#       skill: null
+#
+#     # Example 3: Weekly summary every Monday at 10:00
+#     - name: "weekly-summary"
+#       cron: "0 10 * * 1"
+#       prompt: "生成本周工作摘要，列出已完成事项和下周计划"
+#       channel: dingtalk
+#       chat_id: "your_chat_id@chat"
+#       skill: null
+#
+# Supported channels: dingtalk / wechat / telegram / qq
+# Cron format: minute hour day month weekday
+#   minute:  0-59
+#   hour:    0-23
+#   day:     1-31
+#   month:   1-12
+#   weekday: 0-6 (0=Sunday, 1=Monday, ..., 6=Saturday)
 
