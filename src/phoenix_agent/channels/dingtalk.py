@@ -140,7 +140,8 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             return
 
         raw_data = callback.data or {}
-        msg_type_raw = getattr(incoming, "msgtype", "text") or "text"
+        # SDK stores callback "msgtype" as "message_type" attribute
+        msg_type_raw = getattr(incoming, "message_type", "") or "text"
 
         sender_id = str(incoming.sender_staff_id or "")
         sender_name = incoming.sender_nick or sender_id
@@ -150,8 +151,9 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
 
         self._logger.info(
-            "[dingtalk][stream] Message from %s (%s): msgtype=%s",
+            "[dingtalk][stream] Message from %s (%s): msgtype=%s, conv=%s",
             sender_name, sender_id, msg_type_raw,
+            conversation_id[:20] if conversation_id else "(none)",
         )
 
         # ---- Handle file/image messages ----
