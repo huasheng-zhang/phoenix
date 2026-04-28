@@ -42,5 +42,22 @@ coverage.xml
 Thumbs.db
 
 # Local test / scratch scripts
-send_dingtalk_file.py
+send_*.py
 test_dingtalk_stream.py
+extract_docx.py
+
+# Sensitive / personal files
+工作总结内容.txt
+深圳五一周边游攻略.md
+运维常用命令.txt
+send_guide.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Temp files
+*.bak
+*.tmp
+*.log
