@@ -174,6 +174,29 @@ class WebSearchConfig:
 
 
 @dataclass
+class SchedulerTaskConfig:
+    """Single scheduled task configuration."""
+
+    name: str = ""
+    cron: str = "0 9 * * *"
+    prompt: str = ""
+    channel: str = "dingtalk"
+    chat_id: str = ""
+    skill: Optional[str] = None
+    enabled: bool = True
+    timezone: str = "Asia/Shanghai"
+
+
+@dataclass
+class SchedulerConfig:
+    """Scheduler configuration."""
+
+    enabled: bool = False
+    timezone: str = "Asia/Shanghai"
+    tasks: List[SchedulerTaskConfig] = field(default_factory=list)
+
+
+@dataclass
 class ToolConfig:
     """Configuration for the tool system."""
 
@@ -298,6 +321,7 @@ class Config:
         self.web_search = self._build_web_search_config()
         self.storage = self._build_storage_config()
         self.channels = self._build_channels_config()
+        self.scheduler = self._build_scheduler_config()
 
     def _load_from_file(self) -> None:
         """Load configuration from YAML file."""
@@ -435,6 +459,35 @@ class Config:
             channels=channel_cfgs,
         )
 
+    def _build_scheduler_config(self) -> SchedulerConfig:
+        """Build scheduler configuration from the ``scheduler:`` YAML section."""
+        raw: Dict[str, Any] = self._file_config.get("scheduler", {})
+
+        enabled = raw.get("enabled", False)
+        timezone = raw.get("timezone", "Asia/Shanghai")
+        task_dicts: List[Dict] = raw.get("tasks", [])
+
+        tasks: List[SchedulerTaskConfig] = []
+        for t in task_dicts:
+            if not isinstance(t, dict):
+                continue
+            tasks.append(SchedulerTaskConfig(
+                name=t.get("name", ""),
+                cron=t.get("cron", "0 9 * * *"),
+                prompt=t.get("prompt", ""),
+                channel=t.get("channel", "dingtalk"),
+                chat_id=t.get("chat_id", ""),
+                skill=t.get("skill"),
+                enabled=t.get("enabled", True),
+                timezone=t.get("timezone", timezone),
+            ))
+
+        return SchedulerConfig(
+            enabled=enabled,
+            timezone=timezone,
+            tasks=tasks,
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Export configuration as dictionary (for debugging)."""
         return {
@@ -444,6 +497,7 @@ class Config:
             "web_search": asdict(self.web_search),
             "storage": asdict(self.storage),
             "channels": asdict(self.channels),
+            "scheduler": asdict(self.scheduler),
         }
 
     def validate(self) -> List[str]:

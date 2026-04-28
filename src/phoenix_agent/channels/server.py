@@ -214,7 +214,7 @@ def run_server(
     log_level: str = "info",
 ) -> None:
     """
-    Build the ASGI app, start stream channels, and run uvicorn.
+    Build the ASGI app, start stream channels, start scheduler, and run uvicorn.
 
     Args:
         host:      Bind address (default ``0.0.0.0``).
@@ -224,8 +224,20 @@ def run_server(
         log_level: uvicorn log level (``debug`` / ``info`` / ``warning`` …).
     """
     from phoenix_agent.core.config import get_config
+    from phoenix_agent.core.scheduler import PhoenixScheduler
 
     cfg = config or get_config()
+
+    # --- Start scheduler (if enabled in config) ---
+    scheduler = None
+    if cfg.scheduler and cfg.scheduler.enabled:
+        try:
+            scheduler = PhoenixScheduler(config=cfg)
+            scheduler.start()
+            logger.info("Scheduler started with %d task(s).", len(scheduler.list_tasks()))
+        except Exception as exc:
+            logger.warning("Failed to start scheduler: %s", exc)
+            scheduler = None
 
     # env > config > function args
     env_host = os.environ.get("PHOENIX_CHANNEL_HOST", "").strip()
@@ -245,10 +257,20 @@ def run_server(
         if stream_channels:
             stream_tasks = await _start_stream_channels(stream_channels, pool)
 
+    # Keep scheduler reference so lifespan can shut it down
+    scheduler_ref = [scheduler]  # use a list as a mutable cell
+
     async def lifespan(_app):
         yield  # startup is handled by _on_startup above
         await _shutdown_stream_channels(stream_tasks)
         pool.shutdown()
+        # Stop scheduler on shutdown
+        if scheduler_ref[0] is not None:
+            try:
+                scheduler_ref[0].stop()
+                logger.info("Scheduler stopped.")
+            except Exception as exc:
+                logger.warning("Error stopping scheduler: %s", exc)
 
     app.add_event_handler("startup", _on_startup)
 
