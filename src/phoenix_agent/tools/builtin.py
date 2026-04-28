@@ -536,6 +536,232 @@ def _register_web_tools(registry: ToolRegistry) -> None:
           "required": ["url"]},
          ToolCategory.WEB, web_fetch)
 
+    # ---- web_search -------------------------------------------------------
+
+    def _get_search_config() -> dict:
+        """Lazily load web_search config from the global Config."""
+        try:
+            from phoenix_agent.core.config import get_config
+            cfg = get_config()
+            return {
+                "provider": cfg.web_search.provider,
+                "api_key": cfg.web_search.api_key,
+                "max_results": cfg.web_search.max_results,
+                "search_depth": cfg.web_search.search_depth,
+                "custom_endpoint": cfg.web_search.custom_endpoint,
+                "custom_api_key_name": cfg.web_search.custom_api_key_name,
+            }
+        except Exception:
+            return {
+                "provider": "tavily",
+                "api_key": None,
+                "max_results": 5,
+                "search_depth": "basic",
+                "custom_endpoint": None,
+                "custom_api_key_name": "api_key",
+            }
+
+    def _search_tavily(query: str, max_results: int,
+                       search_depth: str, api_key: str) -> list[dict]:
+        """Search using Tavily API."""
+        from tavily import TavilyClient
+
+        client = TavilyClient(api_key=api_key)
+        response = client.search(
+            query=query,
+            max_results=max_results,
+            search_depth=search_depth,
+            include_answer=True,
+        )
+
+        results = []
+        if response.get("answer"):
+            results.append({
+                "title": "AI Summary",
+                "url": "",
+                "content": response["answer"],
+            })
+
+        for r in response.get("results", []):
+            results.append({
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "content": r.get("content", ""),
+                "score": r.get("score", 0),
+            })
+
+        return results
+
+    def _search_duckduckgo(query: str, max_results: int, **_kw) -> list[dict]:
+        """Search using DuckDuckGo (no API key required)."""
+        from httpx import Client
+
+        # Use DuckDuckGo HTML lite endpoint
+        with Client(timeout=15, follow_redirects=True) as client:
+            resp = client.get(
+                "https://lite.duckduckgo.com/lite/",
+                params={"q": query, "kl": "wt-wt"},
+                headers={"User-Agent": "PhoenixAgent/1.0"},
+            )
+            resp.raise_for_status()
+
+        # Parse results from HTML
+        import re
+        results = []
+        # DuckDuckGo lite returns results as table rows
+        # Each result link is in <a class="result-link" href="...">
+        links = re.findall(
+            r'<a[^>]+class="result-link"[^>]+href="([^"]+)"',
+            resp.text,
+        )
+        # Snippets are in <td class="result-snippet">
+        snippets = re.findall(
+            r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
+            resp.text, re.DOTALL,
+        )
+        # Titles in next td after result-link
+        titles = re.findall(
+            r'<a[^>]+class="result-link"[^>]*>(.*?)</a>',
+            resp.text, re.DOTALL,
+        )
+
+        for i in range(min(max_results, len(links))):
+            title = re.sub(r"<[^>]+>", "", titles[i]).strip() if i < len(titles) else ""
+            snippet = re.sub(r"<[^>]+>", "", snippets[i]).strip() if i < len(snippets) else ""
+            results.append({
+                "title": title,
+                "url": links[i],
+                "content": snippet,
+            })
+
+        return results
+
+    def _search_custom(query: str, max_results: int,
+                       api_key: str, endpoint: str,
+                       api_key_name: str = "api_key", **_kw) -> list[dict]:
+        """Search using a custom API endpoint.
+
+        Expected request:
+            POST {endpoint}
+            Body: {"query": "...", "max_results": N, {api_key_name}: "..."}
+        Expected response:
+            {"results": [{"title": "...", "url": "...", "content": "..."}]}
+        """
+        import httpx
+
+        payload = {"query": query, "max_results": max_results}
+        if api_key:
+            payload[api_key_name] = api_key
+
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(endpoint, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        return data.get("results", [])
+
+    def web_search(query: str,
+                   max_results: int = 0,
+                   search_depth: str = "basic") -> str:
+        """
+        Search the web for information.
+
+        Returns relevant search results with titles, URLs, and content snippets.
+        Uses the configured search provider (default: Tavily).
+
+        Configure via config.yaml 'web_search:' section or env vars:
+          - TAVILY_API_KEY for Tavily
+          - Set provider to "duckduckgo" for free search (no key needed)
+          - Set provider to "custom" with custom_endpoint for custom APIs
+        """
+        cfg = _get_search_config()
+        provider = cfg["provider"]
+        api_key = cfg["api_key"]
+        limit = max_results if max_results > 0 else cfg["max_results"]
+        depth = search_depth if search_depth != "basic" else cfg["search_depth"]
+
+        try:
+            if provider == "tavily":
+                if not api_key:
+                    return ToolResult(
+                        success=False, content="",
+                        error="Tavily API key required. Set TAVILY_API_KEY env var "
+                              "or api_key in config.yaml web_search section."
+                    ).to_json()
+                results = _search_tavily(query, limit, depth, api_key)
+
+            elif provider == "duckduckgo":
+                results = _search_duckduckgo(query, limit, search_depth=depth)
+
+            elif provider == "custom":
+                endpoint = cfg["custom_endpoint"]
+                if not endpoint:
+                    return ToolResult(
+                        success=False, content="",
+                        error="Custom provider requires custom_endpoint in config.yaml"
+                    ).to_json()
+                results = _search_custom(
+                    query, limit, api_key=api_key, endpoint=endpoint,
+                    api_key_name=cfg["custom_api_key_name"],
+                )
+            else:
+                return ToolResult(
+                    success=False, content="",
+                    error=f"Unknown search provider: {provider}. "
+                          f"Supported: tavily, duckduckgo, custom"
+                ).to_json()
+
+        except ImportError as exc:
+            return ToolResult(
+                success=False, content="",
+                error=f"Missing dependency for {provider}: {exc}"
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(
+                success=False, content="",
+                error=f"Search error: {exc}"
+            ).to_json()
+
+        if not results:
+            return ToolResult(
+                success=True,
+                content=f"No results found for: {query}",
+            ).to_json()
+
+        # Format results
+        lines = [f"Search results for: {query}\n"]
+        lines.append(f"(provider: {provider}, {len(results)} results)\n")
+        for i, r in enumerate(results, 1):
+            lines.append(f"--- Result {i} ---")
+            title = r.get("title", "")
+            url = r.get("url", "")
+            content = r.get("content", "")
+            if title:
+                lines.append(f"Title: {title}")
+            if url:
+                lines.append(f"URL: {url}")
+            if content:
+                lines.append(f"Content: {content}")
+            lines.append("")
+
+        return ToolResult(
+            success=True,
+            content="\n".join(lines),
+            metadata={"provider": provider, "result_count": len(results)},
+        ).to_json()
+
+    _reg(registry, "web_search",
+         "Search the web for information. Returns titles, URLs, and content snippets. "
+         "Configure provider in config.yaml 'web_search:' section (tavily/duckduckgo/custom).",
+         {"type": "object",
+          "properties": {
+              "query":        {"type": "string",  "description": "Search query"},
+              "max_results":  {"type": "integer", "description": "Max results (default: from config, usually 5)"},
+              "search_depth": {"type": "string",  "description": "Search depth: 'basic' or 'advanced' (Tavily only)"},
+          },
+          "required": ["query"]},
+         ToolCategory.WEB, web_search)
+
 
 # ---------------------------------------------------------------------------
 # SYSTEM TOOLS

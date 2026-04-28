@@ -77,6 +77,28 @@ tools:
   # Max file size for read operations (bytes)
   max_file_size: 10485760  # 10MB
 
+# Web Search Configuration
+# Built-in provider: tavily (requires API key, free tier: 1000 queries/month)
+#   Get your key at: https://tavily.com — set TAVILY_API_KEY env var or api_key below
+# Alternative: duckduckgo (free, no API key needed, but results may be less accurate)
+# Alternative: custom (your own search API endpoint)
+web_search:
+  # Provider: "tavily" (default), "duckduckgo", or "custom"
+  provider: "tavily"
+
+  # API key — Tavily: set TAVILY_API_KEY env var (recommended) or put here
+  # api_key: ""
+
+  # Max results per search (default: 5)
+  max_results: 5
+
+  # Search depth: "basic" (fast) or "advanced" (deeper, more tokens) — Tavily only
+  search_depth: "basic"
+
+  # ---- Custom provider settings (provider: "custom") ----
+  # custom_endpoint: "https://your-search-api.example.com/search"
+  # custom_api_key_name: "api_key"  # Field name for the API key in the request body
+
 # Storage Configuration
 storage:
   # Database path

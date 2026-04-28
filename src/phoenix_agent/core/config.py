@@ -112,6 +112,7 @@ class AgentConfig:
         "- To read or edit files: use read_file, write_file, list_directory, search_files\n"
         "- To run commands or scripts: use run_command (shell, python, git, etc.)\n"
         "- To fetch web content: use web_fetch\n"
+        "- To search the web: use web_search\n"
         "- For math: use calculate\n"
         "- ALWAYS prefer calling a tool over answering from memory when the task involves the real world\n\n"
         "WORKFLOW:\n"
@@ -139,6 +140,37 @@ class AgentConfig:
     max_memory_tokens: int = 2000
     # Auto-save last N assistant messages as memories at session end (0 = disabled)
     auto_save_threshold: int = 0
+
+
+@dataclass
+class WebSearchConfig:
+    """Configuration for the web search tool."""
+
+    # Provider: "tavily" (built-in), "duckduckgo" (no API key needed), or "custom"
+    provider: str = "tavily"
+
+    # API key — Tavily: from env TAVILY_API_KEY or config; others: provider-specific
+    api_key: Optional[str] = None
+
+    # Max results per search
+    max_results: int = 5
+
+    # Search depth: "basic" or "advanced" (Tavily-specific)
+    search_depth: str = "basic"
+
+    # Custom search endpoint URL (for "custom" provider)
+    custom_endpoint: Optional[str] = None
+
+    # Custom search API key name (for "custom" provider)
+    custom_api_key_name: str = "api_key"
+
+    def __post_init__(self):
+        """Resolve API key from environment variable."""
+        # Tavily: check TAVILY_API_KEY env var
+        if self.provider == "tavily":
+            env_key = os.environ.get("TAVILY_API_KEY", "").strip()
+            if env_key:
+                self.api_key = env_key
 
 
 @dataclass
@@ -263,6 +295,7 @@ class Config:
         self.provider = self._build_provider_config()
         self.agent = self._build_agent_config()
         self.tools = self._build_tool_config()
+        self.web_search = self._build_web_search_config()
         self.storage = self._build_storage_config()
         self.channels = self._build_channels_config()
 
@@ -330,6 +363,19 @@ class Config:
             max_file_size=file_section.get("max_file_size", 10 * 1024 * 1024),
         )
 
+    def _build_web_search_config(self) -> WebSearchConfig:
+        """Build web search configuration from file and env."""
+        file_section = self._file_config.get("web_search", {})
+
+        return WebSearchConfig(
+            provider=file_section.get("provider", "tavily"),
+            api_key=file_section.get("api_key"),
+            max_results=file_section.get("max_results", 5),
+            search_depth=file_section.get("search_depth", "basic"),
+            custom_endpoint=file_section.get("custom_endpoint"),
+            custom_api_key_name=file_section.get("custom_api_key_name", "api_key"),
+        )
+
     def _build_storage_config(self) -> StorageConfig:
         """Build storage configuration from file and env."""
         file_section = self._file_config.get("storage", {})
@@ -395,6 +441,7 @@ class Config:
             "provider": asdict(self.provider),
             "agent": asdict(self.agent),
             "tools": asdict(self.tools),
+            "web_search": asdict(self.web_search),
             "storage": asdict(self.storage),
             "channels": asdict(self.channels),
         }
