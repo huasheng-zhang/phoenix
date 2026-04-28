@@ -107,14 +107,14 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
 
     def __init__(
         self,
-        agent,
+        pool,
         channel_name: str = "dingtalk",
         openapi: Optional[DingTalkOpenAPI] = None,
         download_dir: Optional[str] = None,
         robot_code: Optional[str] = None,
     ):
         super().__init__()
-        self._agent = agent
+        self._pool = pool
         self._channel_name = channel_name
         self._logger = logger
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -154,7 +154,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         if msg_type_raw in ("picture", "file") and self._openapi:
             await self._handle_file_message(
                 incoming, raw_data, msg_type_raw,
-                sender_id, sender_name,
+                sender_id, sender_name, conversation_id,
             )
             return
 
@@ -172,11 +172,16 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             sender_name, sender_id, user_text[:80],
         )
 
+        # Resolve per-conversation agent from pool
+        conversation_id = str(getattr(incoming, "conversation_id", "") or "")
+        chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
+        agent = self._pool.get_agent(self._channel_name, chat_key)
+
         try:
             loop = asyncio.get_event_loop()
             response_text = await loop.run_in_executor(
                 None,
-                lambda: self._agent.run(user_text),
+                lambda: agent.run(user_text),
             )
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] Agent error: %s", exc)
@@ -262,6 +267,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         msg_type_raw: str,
         sender_id: str,
         sender_name: str,
+        conversation_id: str = "",
     ):
         """Download file from DingTalk and pass info to the agent."""
         try:
@@ -314,11 +320,14 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                     f"已保存到 {local_path}，大小 {len(file_bytes)} 字节]"
                 )
 
-            # Run agent
+            # Run agent (per-conversation)
+            chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
+            agent = self._pool.get_agent(self._channel_name, chat_key)
+
             try:
                 loop = asyncio.get_event_loop()
                 response_text = await loop.run_in_executor(
-                    None, lambda: self._agent.run(desc),
+                    None, lambda: agent.run(desc),
                 )
             except Exception as exc:
                 self._logger.exception("[dingtalk][stream] Agent error on file: %s", exc)
@@ -578,7 +587,7 @@ class DingTalkChannel(BaseChannel):
     # Stream mode — WebSocket long connection
     # ------------------------------------------------------------------
 
-    async def start_stream(self, agent) -> None:
+    async def start_stream(self, pool) -> None:
         """
         Start the DingTalk WebSocket long-connection client.
 
@@ -586,7 +595,8 @@ class DingTalkChannel(BaseChannel):
         from the server so it runs in the background.
 
         Args:
-            agent: The Phoenix Agent instance to handle messages.
+            pool: The :class:`~phoenix_agent.core.pool.AgentPool` instance
+                  for managing per-conversation agents.
         """
         if not _HAS_DINGTALK_STREAM:
             raise ChannelError(
@@ -620,7 +630,7 @@ class DingTalkChannel(BaseChannel):
         client = dingtalk_stream.DingTalkStreamClient(credential)
 
         handler = _DingTalkStreamHandler(
-            agent=agent,
+            pool=pool,
             channel_name=self.NAME,
             openapi=self._openapi,
             download_dir=self._download_dir,

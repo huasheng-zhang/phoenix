@@ -24,9 +24,16 @@ Architecture
     │                                                      │
     │  Stream channels (long connection)                     │
     │   └─ DingTalkStreamClient  → Phoenix Agent           │
+    │                                                      │
+    │  AgentPool — one Agent per (channel, chat_id)        │
+    │   ├─ dingtalk/group:cid-123  → Agent A              │
+    │   ├─ dingtalk/user:uid-456   → Agent B              │
+    │   ├─ telegram/chat:789        → Agent C              │
+    │   └─ ...                                                │
     └──────────────────────────────────────────────────────┘
 
-All channels share the same :class:`~phoenix_agent.core.agent.Agent` instance.
+Each conversation gets its own Agent instance via :class:`~phoenix_agent.core.pool.AgentPool`,
+ensuring complete context isolation between users and chats.
 
 Usage
 -----
@@ -64,7 +71,7 @@ def build_app(
     config=None,
 ) -> Tuple[Any, List[Tuple[str, Any]], Any]:
     """
-    Build the Starlette ASGI app and return (app, stream_channels, agent).
+    Build the Starlette ASGI app and return (app, stream_channels, pool).
 
     Args:
         config: A :class:`~phoenix_agent.core.config.Config` instance.
@@ -75,7 +82,7 @@ def build_app(
           - app: A Starlette ASGI application.
           - stream_channels: List of (channel_name, channel_instance) that
             need ``start_stream()`` called.
-          - agent: The shared Phoenix Agent instance.
+          - pool: The :class:`~phoenix_agent.core.pool.AgentPool` instance.
 
     Raises:
         RuntimeError: If no channels are enabled at all.
@@ -86,7 +93,7 @@ def build_app(
     from starlette.routing import Mount, Route
 
     from phoenix_agent.core.config import get_config
-    from phoenix_agent.core.agent import Agent
+    from phoenix_agent.core.pool import AgentPool
     from phoenix_agent.channels.registry import ChannelRegistry
 
     cfg = config or get_config()
@@ -94,8 +101,8 @@ def build_app(
     # --- Ensure all channel adapters are imported (triggers auto-register) ---
     _import_channel_adapters()
 
-    # --- Create shared Agent instance ---
-    agent = Agent(config=cfg)
+    # --- Create AgentPool (manages per-conversation Agent instances) ---
+    pool = AgentPool(config=cfg)
 
     # --- Classify channels by mode ---
     registry = ChannelRegistry.get_instance()
@@ -119,10 +126,10 @@ def build_app(
         # Instantiate channel with the raw settings dict
         channel = channel_cls(config=ch_cfg.settings)
 
-        # Wire the agent as the message handler (for internal/webhook modes)
-        def _make_handler(ch=channel, ag=agent):
+        # Wire the pool as the message handler (for internal/webhook modes)
+        def _make_handler(ch=channel, pl=pool):
             async def _handle(msg):
-                await _process_message(ch, ag, msg)
+                await _process_message(ch, pl, msg)
             return _handle
 
         channel.register_handler(_make_handler())
@@ -159,18 +166,18 @@ def build_app(
     http_routes.insert(0, Route("/health", endpoint=_health))
 
     app = Starlette(routes=http_routes)
-    return app, stream_channels, agent
+    return app, stream_channels, pool
 
 
 async def _start_stream_channels(
     stream_channels: List[Tuple[str, Any]],
-    agent,
+    pool,
 ) -> List[asyncio.Task]:
     """Start all stream-mode channels as background asyncio tasks."""
     tasks: List[asyncio.Task] = []
     for ch_name, channel in stream_channels:
         task = asyncio.create_task(
-            _run_stream_channel(ch_name, channel, agent),
+            _run_stream_channel(ch_name, channel, pool),
             name=f"stream-{ch_name}",
         )
         tasks.append(task)
@@ -178,10 +185,11 @@ async def _start_stream_channels(
     return tasks
 
 
-async def _run_stream_channel(ch_name: str, channel, agent) -> None:
+async def _run_stream_channel(ch_name: str, channel, pool) -> None:
     """Run a single stream-mode channel. Propagates exceptions to the caller."""
     try:
-        await channel.start_stream(agent)
+        # Stream channels receive the pool so they can route per-conversation
+        await channel.start_stream(pool)
     except asyncio.CancelledError:
         logger.info("[%s] Stream task cancelled", ch_name)
     except Exception as exc:
@@ -225,7 +233,7 @@ def run_server(
     host = env_host or cfg.channels.host or host
     port = int(env_port or cfg.channels.port or port)
 
-    app, stream_channels, agent = build_app(cfg)
+    app, stream_channels, pool = build_app(cfg)
 
     # Collect stream tasks so they can be cancelled on shutdown
     stream_tasks: List[asyncio.Task] = []
@@ -235,11 +243,12 @@ def run_server(
     async def _on_startup():
         nonlocal stream_tasks
         if stream_channels:
-            stream_tasks = await _start_stream_channels(stream_channels, agent)
+            stream_tasks = await _start_stream_channels(stream_channels, pool)
 
     async def lifespan(_app):
         yield  # startup is handled by _on_startup above
         await _shutdown_stream_channels(stream_tasks)
+        pool.shutdown()
 
     app.add_event_handler("startup", _on_startup)
 
@@ -277,12 +286,16 @@ def _import_channel_adapters() -> None:
             logger.debug("Could not import channel adapter %s: %s", module_path, exc)
 
 
-async def _process_message(channel, agent, message) -> None:
+async def _process_message(channel, pool, message) -> None:
     """
     Central message processing coroutine.
 
-    Receives a :class:`~phoenix_agent.channels.base.ChannelMessage`, runs it
-    through the agent, then sends the reply back via the channel.
+    Receives a :class:`~phoenix_agent.channels.base.ChannelMessage`, looks up
+    or creates a per-conversation Agent from the pool, runs it, then sends
+    the reply back via the channel.
+
+    Each ``(channel_name, platform_id)`` pair gets its own Agent, ensuring
+    complete context isolation between conversations.
     """
     from phoenix_agent.channels.base import ChannelReply
 
@@ -297,6 +310,9 @@ async def _process_message(channel, agent, message) -> None:
         "[server] Received message from channel=%s chat=%s: %r",
         message.channel, chat_id, user_text[:80],
     )
+
+    # Get or create a per-conversation agent
+    agent = pool.get_agent(message.channel, chat_id)
 
     try:
         loop = asyncio.get_event_loop()
