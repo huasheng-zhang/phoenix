@@ -14,8 +14,13 @@ Phoenix Agent 定时任务调度器，基于 APScheduler 实现。
           channel: dingtalk
           chat_id: "xxx@chat"
           skill: null
+
+热加载支持：
+    PhoenixScheduler 单例在 server 启动时创建，之后 add_task / remove_task
+    操作会立即生效并同步写入 config.yaml，无需重启服务。
 """
 import logging
+import os
 import uuid
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
@@ -50,6 +55,22 @@ class SchedulerConfig:
     tasks: List[SchedulerTaskConfig] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Singleton instance (set by server.py; tools/builtin.py access it via getter)
+# ---------------------------------------------------------------------------
+
+_scheduler_instance: Optional["PhoenixScheduler"] = None
+
+
+def get_scheduler() -> Optional["PhoenixScheduler"]:
+    """Return the running scheduler singleton (set by server.py)."""
+    return _scheduler_instance
+
+
+# ---------------------------------------------------------------------------
+# PhoenixScheduler
+# ---------------------------------------------------------------------------
+
 class PhoenixScheduler:
     """
     Phoenix Agent 定时任务调度器。
@@ -57,9 +78,13 @@ class PhoenixScheduler:
     在 Agent 启动时自动加载 config.yaml 中的 scheduled_tasks，
     使用 APScheduler 按 cron 表达式执行任务。
     任务触发时调用 Agent 生成回复，并通过对应 channel 推送结果。
+
+    add_task / remove_task 操作会立即生效并同步写入 config.yaml，
+    无需重启服务。
     """
 
     def __init__(self, config: Optional[Config] = None):
+        global _scheduler_instance
         self.config = config or get_config()
         self._scheduler: Optional[BackgroundScheduler] = None
         self._task_configs: List[SchedulerTaskConfig] = []
@@ -70,6 +95,9 @@ class PhoenixScheduler:
 
         if self._task_configs:
             self._init_scheduler()
+
+        # Register as singleton so builtin tools can reach it
+        _scheduler_instance = self
 
     def _load_tasks_from_config(self) -> None:
         """从 config.yaml 的 scheduler: 段加载任务配置。"""
@@ -299,28 +327,137 @@ class PhoenixScheduler:
         """Job 执行失败回调。"""
         logger.error("Job %s failed: %s", event.job_id, event.exception)
 
+    def _config_path(self) -> Optional[str]:
+        """Return the config file path used by the running config."""
+        path = getattr(self.config, "config_file", None)
+        if path:
+            return str(path)
+        # Fallback: derive from phoenix_home
+        try:
+            from phoenix_agent.core.config import _get_phoenix_home
+            return str(_get_phoenix_home() / "config.yaml")
+        except Exception:
+            return None
+
+    def _persist_tasks(self) -> None:
+        """将当前 _task_configs 写回 config.yaml 的 scheduler 段。"""
+        import yaml
+        path_str = self._config_path()
+        if not path_str:
+            logger.warning("Cannot determine config path — skipping persist.")
+            return
+        path = __import__("pathlib").Path(path_str)
+        if not path.exists():
+            logger.warning("Config file does not exist — skipping persist.")
+            return
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw_scheduler = data.get("scheduler", {})
+            raw_scheduler["enabled"] = True
+            raw_scheduler["tasks"] = [
+                {
+                    "name": t.name,
+                    "cron": t.cron,
+                    "prompt": t.prompt,
+                    "channel": t.channel,
+                    "chat_id": t.chat_id,
+                    "skill": t.skill,
+                    "enabled": t.enabled,
+                    "timezone": t.timezone,
+                }
+                for t in self._task_configs
+            ]
+            data["scheduler"] = raw_scheduler
+            path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            logger.info("Persisted %d task(s) to config.yaml.", len(self._task_configs))
+        except Exception as e:
+            logger.error("Failed to persist tasks to config.yaml: %s", e)
+
+    def reload(self) -> None:
+        """
+        热加载：重新从 config.yaml 读取任务，对比当前运行的 jobs，
+        添加缺失的、移除多余的，但不重复添加已存在的。
+
+        适用于 config.yaml 被外部修改后同步调度器。
+        """
+        logger.info("Reloading scheduler from config.yaml...")
+        # 读取最新配置（不使用缓存的 config 对象，直接读文件）
+        import yaml
+        path_str = self._config_path()
+        if path_str:
+            try:
+                data = yaml.safe_load(__import__("pathlib").Path(path_str).read_text(encoding="utf-8")) or {}
+                raw = data.get("scheduler", {})
+                if not raw.get("enabled", False):
+                    logger.info("Scheduler is disabled in config.yaml.")
+                    return
+                task_dicts = raw.get("tasks", [])
+            except Exception as e:
+                logger.warning("Failed to read config for reload: %s", e)
+                return
+        else:
+            return
+
+        existing_names = {t.name for t in self._task_configs}
+
+        for t in task_dicts:
+            if isinstance(t, dict) and t.get("enabled", True):
+                task_cfg = SchedulerTaskConfig(
+                    name=t.get("name", f"task-{uuid.uuid4().hex[:8]}"),
+                    cron=t.get("cron", "0 9 * * *"),
+                    prompt=t.get("prompt", ""),
+                    channel=t.get("channel", "dingtalk"),
+                    chat_id=t.get("chat_id", ""),
+                    skill=t.get("skill"),
+                    enabled=t.get("enabled", True),
+                    timezone=t.get("timezone", "Asia/Shanghai"),
+                )
+                if task_cfg.name in existing_names:
+                    continue  # 已存在，跳过
+                if not task_cfg.prompt:
+                    continue
+                self._add_job(task_cfg)
+                self._task_configs.append(task_cfg)
+                logger.info("Hot-added task '%s' from config.yaml.", task_cfg.name)
+
+        # 移除 config.yaml 中已删除的任务
+        latest_names = {t.get("name") for t in task_dicts if isinstance(t, dict)}
+        for task_cfg in list(self._task_configs):
+            if task_cfg.name not in latest_names:
+                if self._scheduler and self._scheduler.running:
+                    try:
+                        self._scheduler.remove_job(task_cfg.name)
+                    except Exception:
+                        pass
+                self._task_configs.remove(task_cfg)
+                self._job_ids.pop(task_cfg.name, None)
+                logger.info("Hot-removed task '%s' (not in config.yaml).", task_cfg.name)
+
+        logger.info("Reload complete. Running %d task(s).", len(self._task_configs))
+
     def add_task(self, task_cfg: SchedulerTaskConfig) -> bool:
-        """动态添加一个定时任务。"""
+        """动态添加一个定时任务，立即生效并持久化到 config.yaml。"""
         if not self._scheduler:
             self._init_scheduler()
-        self._add_job(task_cfg)
-        self._task_configs.append(task_cfg)
         if not self._scheduler.running:
             self.start()
+        self._add_job(task_cfg)
+        self._task_configs.append(task_cfg)
+        self._persist_tasks()
         return True
 
     def remove_task(self, name: str) -> bool:
-        """移除一个定时任务。"""
+        """移除一个定时任务，立即生效并同步更新 config.yaml。"""
         if self._scheduler:
             try:
                 self._scheduler.remove_job(name)
-                self._job_ids.pop(name, None)
-                self._task_configs = [t for t in self._task_configs if t.name != name]
-                logger.info("Removed scheduled task: %s", name)
-                return True
-            except Exception as e:
-                logger.error("Failed to remove task '%s': %s", name, e)
-        return False
+            except Exception:
+                pass
+        self._job_ids.pop(name, None)
+        self._task_configs = [t for t in self._task_configs if t.name != name]
+        self._persist_tasks()
+        logger.info("Removed scheduled task: %s", name)
+        return True
 
     def list_tasks(self) -> List[Dict[str, Any]]:
         """列出所有已注册的任务。"""

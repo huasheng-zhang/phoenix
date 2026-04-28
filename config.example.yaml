@@ -253,9 +253,9 @@ skills:
 # When a task fires, the agent executes the configured prompt and pushes
 # the result to the specified channel/chat_id.
 #
-# CLI: phoenix scheduler list / add / remove  (TBD)
-#
-# Important: Changes require server restart to take effect.
+# Hot-reload: Tasks added/removed via the Agent (add_scheduled_task /
+# remove_scheduled_task tools) take effect immediately without server restart.
+# External config.yaml edits are synced on next Phoenix restart or reload.
 # ============================================================================
 # scheduler:
 #   enabled: true

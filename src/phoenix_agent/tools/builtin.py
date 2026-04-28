@@ -1059,28 +1059,54 @@ def _write_scheduler_section(scheduler_data: dict) -> None:
         pass
 
 
+def _get_scheduler_singleton():
+    """
+    获取运行中的 PhoenixScheduler 单例。
+    如果调度器未启动，返回 None。
+    """
+    from phoenix_agent.core.scheduler import get_scheduler
+    return get_scheduler()
+
+
 def list_scheduled_tasks() -> str:
     """
     List all configured scheduled tasks with their settings.
 
-    Returns a table of tasks: name, cron, channel, chat_id, enabled, skill.
+    Returns a table of tasks: name, cron, channel, chat_id, enabled, skill, next_run.
+    优先从运行中的调度器获取（包含 next_run 信息），fallback 到 config.yaml。
     """
     try:
+        # 优先从运行中的调度器获取（包含 next_run）
+        scheduler = _get_scheduler_singleton()
+        if scheduler:
+            running_tasks = scheduler.list_tasks()
+            if running_tasks:
+                lines = [f"{'Name':<22} {'Cron':<15} {'Channel':<10} {'Chat ID':<20} {'Skill':<15} {'Next Run':<25}"]
+                lines.append("-" * 110)
+                for t in running_tasks:
+                    lines.append(
+                        f"{t.get('name',''):<22} {t.get('cron',''):<15} "
+                        f"{t.get('channel',''):<10} {t.get('chat_id',''):<20} "
+                        f"{str(t.get('skill') or ''):<15} {t.get('next_run') or 'N/A':<25}"
+                    )
+                header = f"Scheduled Tasks ({len(running_tasks)} total, running)\n\n"
+                return ToolResult(success=True, content=header + "\n".join(lines)).to_json()
+
+        # Fallback: 从 config.yaml 读取
         tasks = _read_scheduler_tasks().get("tasks", [])
         if not tasks:
             return ToolResult(success=True,
                               content="No scheduled tasks configured.\n"
                                       "Use add_scheduled_task to create one.").to_json()
-        lines = [f"{'Name':<20} {'Cron':<15} {'Channel':<10} {'Chat ID':<20} {'Skill':<15} Enabled"]
+        lines = [f"{'Name':<22} {'Cron':<15} {'Channel':<10} {'Chat ID':<20} {'Skill':<15} Enabled"]
         lines.append("-" * 95)
         for t in tasks:
             lines.append(
-                f"{t.get('name',''):<20} {t.get('cron',''):<15} "
+                f"{t.get('name',''):<22} {t.get('cron',''):<15} "
                 f"{t.get('channel',''):<10} {t.get('chat_id',''):<20} "
                 f"{str(t.get('skill','')):<15} {t.get('enabled', True)}"
             )
-        header = (f"Scheduled Tasks ({len(tasks)} total)\n"
-                  f"Note: Changes require server restart to take effect.\n\n")
+        header = (f"Scheduled Tasks ({len(tasks)} total, from config.yaml)\n\n")
         return ToolResult(success=True, content=header + "\n".join(lines)).to_json()
     except Exception as exc:
         return ToolResult(success=False, content="",
@@ -1097,7 +1123,7 @@ def add_scheduled_task(
     timezone: str = "Asia/Shanghai",
 ) -> str:
     """
-    Add a new scheduled task. The server must be restarted for changes to take effect.
+    Add a new scheduled task. Changes take effect immediately (no server restart needed).
 
     Args:
         name:    Unique task name (used as job ID).
@@ -1117,37 +1143,56 @@ def add_scheduled_task(
                           error="cron and prompt are required").to_json()
 
     try:
-        scheduler_data = _read_scheduler_tasks()
-        tasks = scheduler_data.get("tasks", [])
+        from phoenix_agent.core.scheduler import SchedulerTaskConfig
 
-        # Prevent duplicate names
-        if any(t.get("name") == name for t in tasks):
-            return ToolResult(success=False, content="",
-                              error=f"A task named '{name}' already exists. "
-                                    "Use remove_scheduled_task first.").to_json()
+        scheduler = _get_scheduler_singleton()
+        task_cfg = SchedulerTaskConfig(
+            name=name,
+            cron=cron,
+            prompt=prompt,
+            channel=channel,
+            chat_id=chat_id,
+            skill=skill,
+            timezone=timezone,
+            enabled=True,
+        )
 
-        new_task = {
-            "name": name,
-            "cron": cron,
-            "prompt": prompt,
-            "channel": channel,
-            "chat_id": chat_id,
-            "skill": skill,
-            "timezone": timezone,
-            "enabled": True,
-        }
-        tasks.append(new_task)
-        scheduler_data["tasks"] = tasks
-        scheduler_data["enabled"] = scheduler_data.get("enabled", True)
-        _write_scheduler_section(scheduler_data)
-
-        return ToolResult(success=True,
-                          content=f"Task '{name}' added successfully.\n"
-                                  f"  cron: {cron}\n"
-                                  f"  channel: {channel}\n"
-                                  f"  chat_id: {chat_id}\n"
-                                  f"  skill: {skill or '(none)'}\n\n"
-                                  f"Restart the Phoenix server to apply changes.").to_json()
+        if scheduler:
+            # 运行中的调度器：直接添加（会持久化到 config.yaml）
+            # 先检查是否已存在
+            existing = scheduler.list_tasks()
+            if any(t["name"] == name for t in existing):
+                return ToolResult(success=False, content="",
+                                  error=f"A task named '{name}' already exists. "
+                                        "Use remove_scheduled_task first.").to_json()
+            scheduler.add_task(task_cfg)
+            return ToolResult(success=True,
+                              content=f"Task '{name}' added and scheduled immediately.\n"
+                                      f"  cron: {cron}\n"
+                                      f"  channel: {channel}\n"
+                                      f"  chat_id: {chat_id}\n"
+                                      f"  skill: {skill or '(none)'}\n\n"
+                                      f"Changes persisted to config.yaml (no restart needed).").to_json()
+        else:
+            # 调度器未运行：回退到仅写 config.yaml
+            scheduler_data = _read_scheduler_tasks()
+            tasks = scheduler_data.get("tasks", [])
+            if any(t.get("name") == name for t in tasks):
+                return ToolResult(success=False, content="",
+                                  error=f"A task named '{name}' already exists. "
+                                        "Use remove_scheduled_task first.").to_json()
+            new_task = {
+                "name": name, "cron": cron, "prompt": prompt,
+                "channel": channel, "chat_id": chat_id,
+                "skill": skill, "timezone": timezone, "enabled": True,
+            }
+            tasks.append(new_task)
+            scheduler_data["tasks"] = tasks
+            scheduler_data["enabled"] = scheduler_data.get("enabled", True)
+            _write_scheduler_section(scheduler_data)
+            return ToolResult(success=True,
+                              content=f"Task '{name}' saved to config.yaml.\n"
+                                      f"Scheduler is not running — restart Phoenix to activate.").to_json()
     except Exception as exc:
         return ToolResult(success=False, content="",
                           error=f"Failed to add task: {exc}").to_json()
@@ -1155,26 +1200,37 @@ def add_scheduled_task(
 
 def remove_scheduled_task(name: str) -> str:
     """
-    Remove a scheduled task by name. The server must be restarted for changes to take effect.
+    Remove a scheduled task by name. Takes effect immediately (no server restart needed).
 
     Args:
         name: The name of the task to remove.
     """
     try:
-        scheduler_data = _read_scheduler_tasks()
-        tasks = scheduler_data.get("tasks", [])
-        original = len(tasks)
-        tasks = [t for t in tasks if t.get("name") != name]
-        if len(tasks) == original:
-            return ToolResult(success=False, content="",
-                              error=f"No task named '{name}' found.").to_json()
-
-        scheduler_data["tasks"] = tasks
-        _write_scheduler_section(scheduler_data)
-
-        return ToolResult(success=True,
-                          content=f"Task '{name}' removed.\n"
-                                  f"Restart the Phoenix server to apply changes.").to_json()
+        scheduler = _get_scheduler_singleton()
+        if scheduler:
+            # 运行中的调度器：直接移除（会持久化到 config.yaml）
+            removed = scheduler.remove_task(name)
+            if removed:
+                return ToolResult(success=True,
+                                  content=f"Task '{name}' removed and unscheduled immediately.\n"
+                                          f"Changes persisted to config.yaml (no restart needed).").to_json()
+            else:
+                return ToolResult(success=False, content="",
+                                  error=f"No task named '{name}' found.").to_json()
+        else:
+            # 调度器未运行：仅从 config.yaml 移除
+            scheduler_data = _read_scheduler_tasks()
+            tasks = scheduler_data.get("tasks", [])
+            original = len(tasks)
+            tasks = [t for t in tasks if t.get("name") != name]
+            if len(tasks) == original:
+                return ToolResult(success=False, content="",
+                                  error=f"No task named '{name}' found.").to_json()
+            scheduler_data["tasks"] = tasks
+            _write_scheduler_section(scheduler_data)
+            return ToolResult(success=True,
+                              content=f"Task '{name}' removed from config.yaml.\n"
+                                      f"Scheduler is not running — restart Phoenix to apply.").to_json()
     except Exception as exc:
         return ToolResult(success=False, content="",
                           error=f"Failed to remove task: {exc}").to_json()
@@ -1184,15 +1240,15 @@ def _register_scheduler_tools(registry: ToolRegistry) -> None:
     """Register all scheduler management tools."""
     _reg(registry, "list_scheduled_tasks",
          "List all configured scheduled tasks with their name, cron expression, "
-         "channel, chat_id, skill, and enabled status. "
-         "Changes require a server restart to take effect.",
+         "channel, chat_id, skill, and next_run time. "
+         "Shows running scheduler state if Phoenix is active.",
          {"type": "object", "properties": {}, "required": []},
          ToolCategory.UTILITY, list_scheduled_tasks)
 
     _reg(registry, "add_scheduled_task",
          "Add a new cron-based scheduled task. The agent will run the given prompt "
          "at the scheduled time and push the result to the specified channel/chat_id. "
-         "Server restart required to apply changes.",
+         "Takes effect immediately — no server restart needed.",
          {"type": "object",
           "properties": {
               "name":     {"type": "string",  "description": "Unique task name (alphanumeric/hyphen only)"},
@@ -1207,7 +1263,7 @@ def _register_scheduler_tools(registry: ToolRegistry) -> None:
          ToolCategory.UTILITY, add_scheduled_task)
 
     _reg(registry, "remove_scheduled_task",
-         "Remove a scheduled task by name. Server restart required to apply changes.",
+         "Remove a scheduled task by name. Takes effect immediately — no server restart needed.",
          {"type": "object",
           "properties": {
               "name": {"type": "string", "description": "Name of the task to remove"},
