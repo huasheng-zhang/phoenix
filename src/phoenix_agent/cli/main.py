@@ -156,6 +156,48 @@ Examples:
 
     _add_common_args(skill_parser)
 
+    # ---- phoenix memory ----
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Manage persistent cross-session memories",
+    )
+    memory_sub = memory_parser.add_subparsers(dest="memory_action", metavar="ACTION")
+
+    # phoenix memory list
+    memory_sub.add_parser(
+        "list",
+        help="List all memories",
+    )
+
+    # phoenix memory show <key>
+    mem_show_parser = memory_sub.add_parser(
+        "show",
+        help="Show details of a specific memory",
+    )
+    mem_show_parser.add_argument("key", metavar="KEY", help="Memory key")
+
+    # phoenix memory search <query>
+    mem_search_parser = memory_sub.add_parser(
+        "search",
+        help="Search memories by keyword",
+    )
+    mem_search_parser.add_argument("query", metavar="QUERY", help="Search query")
+
+    # phoenix memory delete <key>
+    mem_del_parser = memory_sub.add_parser(
+        "delete",
+        help="Delete a specific memory",
+    )
+    mem_del_parser.add_argument("key", metavar="KEY", help="Memory key to delete")
+
+    # phoenix memory clear
+    memory_sub.add_parser(
+        "clear",
+        help="Delete ALL memories",
+    )
+
+    _add_common_args(memory_parser)
+
     return parser
 
 
@@ -181,6 +223,8 @@ def main() -> None:
             _cmd_serve(args)
         elif args.subcommand == "skill":
             _cmd_skill(args)
+        elif args.subcommand == "memory":
+            _cmd_memory(args)
         elif args.query:
             _cmd_query(args)
         else:
@@ -413,6 +457,146 @@ def _skill_create(args) -> None:
     print(f"  Skill scaffolded at: {target_dir}")
     print(f"  Edit {target_dir / 'SKILL.yaml'} to configure triggers and tools.")
     print(f"  Edit {target_dir / 'prompt.md'} to write the system prompt.")
+
+
+# ---------------------------------------------------------------------------
+# Memory sub-command handlers
+# ---------------------------------------------------------------------------
+
+def _cmd_memory(args) -> None:
+    """Handle 'phoenix memory <action>' sub-command."""
+    action = getattr(args, "memory_action", None)
+
+    if action == "list":
+        _memory_list(args)
+    elif action == "show":
+        _memory_show(args)
+    elif action == "search":
+        _memory_search(args)
+    elif action == "delete":
+        _memory_delete(args)
+    elif action == "clear":
+        _memory_clear(args)
+    else:
+        # No action specified — default to list
+        _memory_list(args)
+
+
+def _get_memory_store(args):
+    """Helper: get MemoryStore from config."""
+    from phoenix_agent.core.config import get_config
+    from phoenix_agent.core.state import Database, MemoryStore
+    cfg = get_config(path=args.config)
+    db = Database(cfg.storage.db_path)
+    return MemoryStore(db)
+
+
+def _memory_list(args) -> None:
+    """List all memories."""
+    from rich.console import Console
+    from rich.table import Table
+    from datetime import datetime as _dt
+
+    console = Console()
+    store = _get_memory_store(args)
+    memories = store.load_all_detail()
+    count = store.count()
+
+    if count == 0:
+        console.print("[dim]No memories stored yet.[/dim]")
+        return
+
+    table = Table(title=f"Persistent Memories ({count} total)", show_header=True, header_style="bold")
+    table.add_column("Key", style="cyan", no_wrap=True)
+    table.add_column("Category", style="yellow", no_wrap=True)
+    table.add_column("Content")
+    table.add_column("Updated", style="dim", no_wrap=True)
+
+    for m in memories:
+        ts = m.get("updated_at", 0)
+        ts_str = _dt.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "-"
+        content = m.get("content", "")
+        table.add_row(m["key"], m.get("category", "general"),
+                      content[:60] + ("…" if len(content) > 60 else ""), ts_str)
+
+    console.print(table)
+
+
+def _memory_show(args) -> None:
+    """Show a specific memory."""
+    from rich.console import Console
+
+    console = Console()
+    store = _get_memory_store(args)
+    m = store.get(args.key)
+
+    if not m:
+        console.print(f"[red]Memory '{args.key}' not found.[/red]")
+        return
+
+    from datetime import datetime as _dt
+    ts = m.get("updated_at", 0)
+    ts_str = _dt.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "-"
+
+    console.print(f"[bold cyan]Key:[/bold cyan]     {m['key']}")
+    console.print(f"[bold]Category:[/bold]  {m.get('category', 'general')}")
+    console.print(f"[bold]Updated:[/bold]   {ts_str}")
+    console.print(f"[bold]Session:[/bold]   {m.get('source_session', 'N/A')}")
+    console.print(f"\n[bold]Content:[/bold]\n{m['content']}")
+
+
+def _memory_search(args) -> None:
+    """Search memories by keyword."""
+    from rich.console import Console
+
+    console = Console()
+    store = _get_memory_store(args)
+    results = store.recall(args.query)
+
+    if not results:
+        console.print(f"[dim]No memories matching '{args.query}'.[/dim]")
+        return
+
+    console.print(f"[bold]Found {len(results)} result(s):[/bold]\n")
+    for m in results:
+        console.print(f"  [cyan]{m['key']}[/cyan] [{m.get('category', 'general')}]")
+        console.print(f"    {m['content']}")
+        console.print()
+
+
+def _memory_delete(args) -> None:
+    """Delete a specific memory."""
+    from rich.console import Console
+
+    console = Console()
+    store = _get_memory_store(args)
+
+    if store.delete(args.key):
+        console.print(f"[green]Deleted memory: {args.key}[/green]")
+    else:
+        console.print(f"[red]Memory '{args.key}' not found.[/red]")
+
+
+def _memory_clear(args) -> None:
+    """Delete all memories."""
+    from rich.console import Console
+
+    console = Console()
+    store = _get_memory_store(args)
+    count = store.count()
+
+    if count == 0:
+        console.print("[dim]No memories to clear.[/dim]")
+        return
+
+    console.print(f"[yellow]This will delete all {count} memories.[/yellow]")
+    confirm = input("  Are you sure? (y/N): ").strip().lower()
+    if confirm != "y":
+        console.print("[dim]Cancelled.[/dim]")
+        return
+
+    deleted = store.clear()
+    console.print(f"[green]Deleted {deleted} memories.[/green]")
 
 
 if __name__ == "__main__":

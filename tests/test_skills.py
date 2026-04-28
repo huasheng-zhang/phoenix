@@ -464,6 +464,7 @@ class TestAgentSkillIntegration:
         agent._skill_registry = None
         agent.system_prompt = "Base prompt."
         agent.tools = mock.Mock()
+        agent.memory = None
 
         registry = SkillRegistry()
         skill = registry.load_from_directory(str(skill_dir))

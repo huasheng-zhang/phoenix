@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Schema Definition
 # =============================================================================
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 CREATE_TABLES_SQL = """
 -- Schema version tracking
@@ -62,9 +62,21 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- Memories table: persistent cross-session knowledge
+CREATE TABLE IF NOT EXISTS memories (
+    key TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    category TEXT DEFAULT 'general',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    source_session TEXT
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at DESC);
 """
 
 
@@ -664,3 +676,170 @@ class SessionState:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass  # Don't close shared database
+
+
+class MemoryStore:
+    """
+    Persistent cross-session memory store.
+
+    Stores key-value memories that survive conversation resets and
+    agent restarts.  Memories are injected into the system prompt
+    so the agent can reason about accumulated knowledge.
+
+    Typical usage::
+
+        mem = MemoryStore(db)
+        mem.save("user_name", "Alice")
+        mem.save("project_lang", "Python", category="preference")
+        all_mem = mem.load_all()          # → {"user_name": "Alice", ...}
+        mem.recall("project")             # → [{"key": "project_lang", ...}]
+        mem.delete("user_name")
+    """
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    def save(
+        self,
+        key: str,
+        content: str,
+        category: str = "general",
+        source_session: Optional[str] = None,
+    ) -> None:
+        """
+        Save or update a memory entry.
+
+        Args:
+            key: Unique identifier for this memory.
+            content: The text content to remember.
+            category: Optional category tag (e.g. "preference", "fact").
+            source_session: Session that created this memory.
+        """
+        now = time.time()
+        with self.db.transaction() as conn:
+            conn.execute(
+                """INSERT INTO memories (key, content, category, created_at, updated_at, source_session)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET
+                       content = excluded.content,
+                       category = excluded.category,
+                       updated_at = excluded.updated_at,
+                       source_session = COALESCE(excluded.source_session, source_session)""",
+                (key, content, category, now, now, source_session),
+            )
+
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
+        """Get a single memory by key."""
+        with self.db._lock:
+            cursor = self.db._conn.execute(
+                "SELECT key, content, category, created_at, updated_at, source_session FROM memories WHERE key = ?",
+                (key,),
+            )
+            row = cursor.fetchone()
+        if row:
+            return dict(row) if isinstance(row, sqlite3.Row) else {
+                "key": row[0], "content": row[1], "category": row[2],
+                "created_at": row[3], "updated_at": row[4], "source_session": row[5],
+            }
+        return None
+
+    def delete(self, key: str) -> bool:
+        """Delete a memory by key. Returns True if it existed."""
+        with self.db.transaction() as conn:
+            cursor = conn.execute("DELETE FROM memories WHERE key = ?", (key,))
+            return cursor.rowcount > 0
+
+    def delete_category(self, category: str) -> int:
+        """Delete all memories in a category. Returns count deleted."""
+        with self.db.transaction() as conn:
+            cursor = conn.execute("DELETE FROM memories WHERE category = ?", (category,))
+            return cursor.rowcount
+
+    def clear(self) -> int:
+        """Delete all memories. Returns count deleted."""
+        with self.db.transaction() as conn:
+            cursor = conn.execute("DELETE FROM memories")
+            return cursor.rowcount
+
+    # ------------------------------------------------------------------
+    # Query
+    # ------------------------------------------------------------------
+
+    def load_all(self) -> Dict[str, str]:
+        """Load all memories as a {key: content} dict."""
+        with self.db._lock:
+            cursor = self.db._conn.execute(
+                "SELECT key, content FROM memories ORDER BY updated_at DESC"
+            )
+            rows = cursor.fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def load_all_detail(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Load all memories with full metadata."""
+        with self.db._lock:
+            cursor = self.db._conn.execute(
+                """SELECT key, content, category, created_at, updated_at, source_session
+                   FROM memories ORDER BY updated_at DESC LIMIT ?""",
+                (limit,),
+            )
+            rows = cursor.fetchall()
+        return [dict(r) if isinstance(r, sqlite3.Row) else {
+            "key": r[0], "content": r[1], "category": r[2],
+            "created_at": r[3], "updated_at": r[4], "source_session": r[5],
+        } for r in rows]
+
+    def recall(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search memories by keyword (LIKE match on key and content).
+
+        Args:
+            query: Search string.
+            limit: Maximum results.
+
+        Returns:
+            List of matching memory dicts.
+        """
+        with self.db._lock:
+            cursor = self.db._conn.execute(
+                """SELECT key, content, category, created_at, updated_at, source_session
+                   FROM memories
+                   WHERE key LIKE ? OR content LIKE ?
+                   ORDER BY updated_at DESC LIMIT ?""",
+                (f"%{query}%", f"%{query}%", limit),
+            )
+            rows = cursor.fetchall()
+        return [dict(r) if isinstance(r, sqlite3.Row) else {
+            "key": r[0], "content": r[1], "category": r[2],
+            "created_at": r[3], "updated_at": r[4], "source_session": r[5],
+        } for r in rows]
+
+    def count(self) -> int:
+        """Return total number of memories."""
+        with self.db._lock:
+            cursor = self.db._conn.execute("SELECT COUNT(*) FROM memories")
+            return cursor.fetchone()[0]
+
+    # ------------------------------------------------------------------
+    # Prompt generation
+    # ------------------------------------------------------------------
+
+    def build_context_block(self, max_memories: int = 50) -> str:
+        """
+        Build a text block of all memories for injection into the system prompt.
+
+        Returns:
+            Markdown-formatted block, or empty string if no memories exist.
+        """
+        memos = self.load_all_detail(limit=max_memories)
+        if not memos:
+            return ""
+
+        lines = ["# Persistent Memory (cross-session knowledge)\n"]
+        for m in memos:
+            cat = f" [{m['category']}]" if m.get("category") and m["category"] != "general" else ""
+            lines.append(f"- **{m['key']}**{cat}: {m['content']}")
+        return "\n".join(lines)

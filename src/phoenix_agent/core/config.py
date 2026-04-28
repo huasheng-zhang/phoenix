@@ -133,6 +133,13 @@ class AgentConfig:
     # ~1 token per 1.5 chars for CJK.  Default: None (no limit).
     max_context_tokens: Optional[int] = None
 
+    # Memory system
+    memory_enabled: bool = True
+    # Max tokens for memory injection into system prompt (0 = unlimited)
+    max_memory_tokens: int = 2000
+    # Auto-save last N assistant messages as memories at session end (0 = disabled)
+    auto_save_threshold: int = 0
+
 
 @dataclass
 class ToolConfig:
@@ -304,6 +311,11 @@ class Config:
             system_prompt=system_prompt,
             stream=file_section.get("stream", True),
             show_thinking=file_section.get("show_thinking", False),
+            max_history_messages=file_section.get("max_history_messages"),
+            max_context_tokens=file_section.get("max_context_tokens"),
+            memory_enabled=file_section.get("memory_enabled", True),
+            max_memory_tokens=file_section.get("max_memory_tokens", 2000),
+            auto_save_threshold=file_section.get("auto_save_threshold", 0),
         )
 
     def _build_tool_config(self) -> ToolConfig:

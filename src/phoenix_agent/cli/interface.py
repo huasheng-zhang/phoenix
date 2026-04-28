@@ -43,7 +43,8 @@ def print_welcome() -> None:
         "  Ask it to read files, run commands, fetch URLs, do math…\n"
         "\n"
         "  Commands: [cyan]/help[/cyan]  [cyan]/tools[/cyan]  [cyan]/sessions[/cyan]  "
-        "[cyan]/reset[/cyan]  [cyan]/clear[/cyan]  [cyan]/quit[/cyan]\n"
+        "[cyan]/new[/cyan]  [cyan]/reset[/cyan]  [cyan]/memory[/cyan]  "
+        "[cyan]/clear[/cyan]  [cyan]/quit[/cyan]\n"
     )
     console.print(Panel(banner, border_style="cyan", expand=False))
 
@@ -56,7 +57,9 @@ def print_help() -> None:
   [cyan]/help[/cyan]          Show this help
   [cyan]/tools[/cyan]         List all available tools
   [cyan]/sessions[/cyan]      Show recent conversation sessions
-  [cyan]/reset[/cyan]         Start a new conversation (clears history)
+  [cyan]/new[/cyan]           Start a new session (preserves memory)
+  [cyan]/reset[/cyan]         Clear current conversation history (preserves memory)
+  [cyan]/memory[/cyan]        Show all persistent memories
   [cyan]/clear[/cyan]         Clear the terminal screen
   [cyan]/quit[/cyan]          Exit
 
@@ -137,6 +140,43 @@ def print_tool_call(tool_name: str, args: dict, result_preview: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Memory display
+# ---------------------------------------------------------------------------
+
+def _show_memories(agent: Agent) -> None:
+    """Show all persistent memories in a formatted table."""
+    if not agent.memory:
+        console.print("[dim]Memory system is not enabled.[/dim]")
+        return
+
+    memories = agent.memory.load_all_detail()
+    count = agent.memory.count()
+
+    if count == 0:
+        console.print("[dim]No memories stored yet.[/dim]")
+        console.print("[dim]The agent can use the save_memory tool to remember things.[/dim]")
+        return
+
+    console.print(f"[bold]Persistent Memories[/bold] ({count} total)\n")
+
+    tbl = Table(show_header=True, header_style="bold")
+    tbl.add_column("Key", style="cyan", no_wrap=True)
+    tbl.add_column("Category", style="yellow", no_wrap=True)
+    tbl.add_column("Content")
+    tbl.add_column("Updated", style="dim", no_wrap=True)
+
+    from datetime import datetime as _dt
+    for m in memories:
+        ts = m.get("updated_at", 0)
+        ts_str = _dt.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "-"
+        content = m.get("content", "")
+        tbl.add_row(m["key"], m.get("category", "general"),
+                     content[:80] + ("…" if len(content) > 80 else ""), ts_str)
+
+    console.print(tbl)
+
+
+# ---------------------------------------------------------------------------
 # Main interactive loop
 # ---------------------------------------------------------------------------
 
@@ -187,14 +227,21 @@ def run_interactive(
         # -- slash commands -------------------------------------------------
         if raw.startswith("/"):
             cmd = raw.lower().split()[0]
+            cmd_args = raw.split(maxsplit=1)
             if cmd in ("/quit", "/exit", "/q"):
                 console.print("[yellow]Goodbye![/yellow]")
                 break
             elif cmd == "/help":
                 print_help()
+            elif cmd == "/new":
+                new_id = agent.new_session()
+                console.print(f"[green]New session started:[/green] {new_id[:12]}…")
+                console.print("[dim]Memories are preserved across sessions.[/dim]")
             elif cmd == "/reset":
                 agent.reset()
-                console.print("[yellow]Conversation reset.[/yellow]")
+                console.print("[yellow]Conversation reset. Memories preserved.[/yellow]")
+            elif cmd == "/memory":
+                _show_memories(agent)
             elif cmd == "/tools":
                 print_tool_list(agent)
             elif cmd == "/sessions":

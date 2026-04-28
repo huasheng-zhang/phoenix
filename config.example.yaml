@@ -51,6 +51,11 @@ agent:
   # max_history_messages: 100          # Keep at most N messages in context
   # max_context_tokens: 120000         # Hard token budget for history (estimate)
 
+  # Memory system (persistent cross-session knowledge)
+  # memory_enabled: true               # Enable/disable memory system
+  # max_memory_tokens: 2000            # Max tokens for memory in system prompt (0=unlimited)
+  # auto_save_threshold: 0             # Auto-save last N messages as memories (0=disabled)
+
 # Tool Configuration
 tools:
   # Enabled tool categories

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Callable, Iterator, TYPE_CHECKING
 
 from phoenix_agent.core.config import Config, get_config
 from phoenix_agent.core.message import Message, Role, MessageHistory
-from phoenix_agent.core.state import SessionState
+from phoenix_agent.core.state import SessionState, MemoryStore
 from phoenix_agent.providers.base import LLMResponse
 from phoenix_agent.providers.openai import create_provider
 from phoenix_agent.tools.registry import ToolRegistry, ToolResult
@@ -67,6 +67,17 @@ class Agent:
 
         # Message history
         self.history = MessageHistory()
+
+        # Memory system (cross-session persistent knowledge)
+        self.memory: Optional[MemoryStore] = None
+        if self.config.agent.memory_enabled:
+            try:
+                from phoenix_agent.core.state import Database
+                db = Database(self.config.storage.db_path)
+                self.memory = MemoryStore(db)
+                logger.info("Memory system enabled (%d memories loaded)", self.memory.count())
+            except Exception as exc:
+                logger.warning("Failed to initialise memory system: %s", exc)
 
         # Iteration tracking
         self.iteration_count = 0
@@ -393,8 +404,16 @@ class Agent:
         return self._active_skill
 
     def _build_effective_system_prompt(self) -> str:
-        """Build the system prompt, incorporating the active skill if set."""
+        """Build the system prompt, incorporating memory and active skill if set."""
         base = self.system_prompt
+
+        # Inject memory context block
+        if self.memory and self.memory.count() > 0:
+            mem_block = self.memory.build_context_block()
+            if mem_block:
+                base = f"{base}\n\n{mem_block}"
+
+        # Inject active skill prompt
         if self._active_skill and self._active_skill.system_prompt:
             skill_prompt = self._active_skill.system_prompt
             return (
@@ -432,6 +451,24 @@ class Agent:
         self.session.clear()
         self.iteration_count = 0
         logger.info("Agent state reset")
+
+    def new_session(self) -> str:
+        """
+        Start a fresh session while preserving memory.
+
+        Unlike reset() which clears the current session's messages,
+        this creates a brand new session.  Cross-session memories
+        are always retained.
+
+        Returns:
+            The new session ID.
+        """
+        old_id = self.session.session_id
+        self.history.clear()
+        self.iteration_count = 0
+        self.session = SessionState(db=self.session.db)
+        logger.info("New session started (old=%s, new=%s)", old_id[:8], self.session.session_id[:8])
+        return self.session.session_id
 
     def end(self) -> None:
         """End the current session."""

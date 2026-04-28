@@ -715,3 +715,75 @@ def _register_utility_tools(registry: ToolRegistry) -> None:
           },
           "required": ["message"]},
          ToolCategory.UTILITY, echo)
+
+    # ---- save_memory -------------------------------------------------------
+    def save_memory(key: str, content: str, category: str = "general") -> str:
+        """
+        Save a piece of knowledge to persistent memory.
+
+        Memories survive conversation resets and agent restarts.
+        Use this to remember important facts, user preferences, or project context.
+        """
+        from phoenix_agent.core.state import Database, MemoryStore
+        try:
+            db = Database.__new__(Database)
+            from phoenix_agent.core.config import get_config
+            cfg = get_config()
+            from phoenix_agent.core.state import SessionState
+            db = SessionState._get_default_db()
+            store = MemoryStore(db)
+            store.save(key, content, category=category)
+            return ToolResult(
+                success=True,
+                content=f"Memory saved: {key} [{category}]"
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Failed to save memory: {exc}").to_json()
+
+    _reg(registry, "save_memory",
+         "Save a piece of knowledge to persistent memory that survives across conversations. "
+         "Use this to remember user preferences, important facts, or project context.",
+         {"type": "object",
+          "properties": {
+              "key": {"type": "string", "description": "Short unique identifier for this memory"},
+              "content": {"type": "string", "description": "The content to remember"},
+              "category": {"type": "string", "description": "Category tag (default: 'general'). E.g. 'preference', 'fact', 'project'"},
+          },
+          "required": ["key", "content"]},
+         ToolCategory.UTILITY, save_memory)
+
+    # ---- recall_memory -----------------------------------------------------
+    def recall_memory(query: str) -> str:
+        """
+        Search persistent memory by keyword.
+        Returns all memories whose key or content matches the query.
+        """
+        from phoenix_agent.core.state import Database, MemoryStore
+        try:
+            from phoenix_agent.core.state import SessionState
+            db = SessionState._get_default_db()
+            store = MemoryStore(db)
+            results = store.recall(query)
+            if not results:
+                return ToolResult(
+                    success=True,
+                    content="No matching memories found."
+                ).to_json()
+            lines = [f"- [{r['category']}] {r['key']}: {r['content']}" for r in results]
+            return ToolResult(
+                success=True,
+                content=f"Found {len(results)} memory(ies):\n" + "\n".join(lines)
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Failed to recall memory: {exc}").to_json()
+
+    _reg(registry, "recall_memory",
+         "Search persistent memory by keyword. Returns memories whose key or content matches the query.",
+         {"type": "object",
+          "properties": {
+              "query": {"type": "string", "description": "Search keyword to match against memory keys and content"},
+          },
+          "required": ["query"]},
+         ToolCategory.UTILITY, recall_memory)
