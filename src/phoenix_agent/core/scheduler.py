@@ -260,24 +260,57 @@ class PhoenixScheduler:
             logger.error("Failed to send result for task '%s': %s", task_cfg.name, e)
 
     def _send_dingtalk(self, chat_id: str, message: str) -> None:
-        """通过钉钉推送消息。"""
-        from phoenix_agent.channels.dingtalk import DingTalkChannel
+        """通过钉钉推送消息（主动推送，不依赖用户消息）。"""
         from phoenix_agent.channels.registry import ChannelRegistry
 
         registry = ChannelRegistry.get_instance()
         channel = registry.get("dingtalk") if registry else None
 
-        if channel and channel.is_enabled():
-            try:
-                # 优先使用 channel 的 send_text 方法
-                if hasattr(channel, "send_text"):
-                    channel.send_text(chat_id=chat_id, content=message)
-                else:
-                    logger.warning("DingTalk channel does not support send_text.")
-            except Exception as e:
-                logger.error("DingTalk send error: %s", e)
-        else:
+        if not channel or not channel.is_enabled():
             logger.warning("DingTalk channel not enabled, cannot send scheduled message.")
+            return
+
+        # 获取 OpenAPI 客户端（用于主动推送）
+        openapi = getattr(channel, "_openapi", None)
+        if not openapi:
+            logger.error("DingTalk OpenAPI not initialized (stream mode needs client_id/client_secret).")
+            return
+
+        # 获取 robot_code（用于 API 调用）
+        robot_code = getattr(channel, "_client_id", None) or getattr(channel, "_app_key", None)
+        if not robot_code:
+            logger.error("DingTalk robot_code not found.")
+            return
+
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            # 判断 chat_id 格式：群会话ID通常以 "oc_" 开头
+            if chat_id.startswith("oc_"):
+                # 群聊消息
+                loop.run_until_complete(
+                    openapi.send_text_to_group(
+                        robot_code=robot_code,
+                        conversation_id=chat_id,
+                        content=message,
+                    )
+                )
+            else:
+                # 单聊消息，chat_id 是用户 ID 列表（逗号分隔）或单个用户ID
+                user_ids = [uid.strip() for uid in chat_id.split(",") if uid.strip()]
+                if not user_ids:
+                    logger.warning("No valid user IDs in chat_id: %r", chat_id)
+                    return
+                loop.run_until_complete(
+                    openapi.send_text_to_user(
+                        robot_code=robot_code,
+                        user_ids=user_ids,
+                        content=message,
+                    )
+                )
+            logger.info("[scheduler] DingTalk push success for chat_id: %s", chat_id[:20])
+        except Exception as e:
+            logger.error("DingTalk send error: %s", e)
 
     def _send_wechat(self, chat_id: str, message: str) -> None:
         """通过企业微信推送消息。"""

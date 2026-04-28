@@ -543,6 +543,105 @@ class DingTalkOpenAPI:
         short_id = uuid.uuid4().hex[:8]
         return f"file_{short_id}{ext}"
 
+    # ------------------------------------------------------------------
+    # Send Text Message (Proactive Push)
+    # ------------------------------------------------------------------
+
+    async def send_text_to_user(
+        self,
+        robot_code: str,
+        user_ids: List[str],
+        content: str,
+    ) -> None:
+        """
+        Send a text message to single users via robot (proactive push).
+
+        Args:
+            robot_code:  The robot's appKey.
+            user_ids:    List of DingTalk user IDs to send to.
+            content:     Text message content.
+        """
+        if not user_ids:
+            raise ValueError("user_ids cannot be empty")
+
+        token = await self._tokens.get_new_token()
+
+        msg_param = json.dumps({"content": content})
+
+        body: Dict[str, Any] = {
+            "robotCode": robot_code,
+            "userIds": user_ids,
+            "msgKey": "sampleText",
+            "msgParam": msg_param,
+        }
+
+        async with ClientSession(timeout=ClientTimeout(total=30)) as session:
+            async with session.post(
+                _ROBOT_SEND_URL,
+                headers={
+                    "x-acs-dingtalk-access-token": token,
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            ) as resp:
+                data = await resp.json()
+
+        if resp.status != 200:
+            raise ChannelAPIError(
+                f"Send text to user failed: HTTP {resp.status}, {data}"
+            )
+
+        logger.info("[dingtalk][api] Text message sent to %d user(s)", len(user_ids))
+
+    async def send_text_to_group(
+        self,
+        robot_code: str,
+        conversation_id: str,
+        content: str,
+        cool_app_code: Optional[str] = None,
+    ) -> None:
+        """
+        Send a text message to a group chat via robot (proactive push).
+
+        Args:
+            robot_code:       The robot's appKey.
+            conversation_id:  DingTalk group conversation ID (openConversationId).
+            content:          Text message content.
+            cool_app_code:    Optional coolAppCode for group messages.
+        """
+        token = await self._tokens.get_new_token()
+
+        msg_param = json.dumps({"content": content})
+
+        body: Dict[str, Any] = {
+            "robotCode": robot_code,
+            "openConversationId": conversation_id,
+            "msgKey": "sampleText",
+            "msgParam": msg_param,
+        }
+
+        if cool_app_code:
+            body["coolAppCode"] = cool_app_code
+
+        async with ClientSession(timeout=ClientTimeout(total=30)) as session:
+            async with session.post(
+                _ROBOT_GROUP_SEND_URL,
+                headers={
+                    "x-acs-dingtalk-access-token": token,
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            ) as resp:
+                data = await resp.json()
+
+        if resp.status != 200:
+            raise ChannelAPIError(
+                f"Send text to group failed: HTTP {resp.status}, {data}"
+            )
+
+        logger.info("[dingtalk][api] Text message sent to group %s",
+                    conversation_id[:12] + "...")
+
 
 # ---------------------------------------------------------------------------
 # Exception
