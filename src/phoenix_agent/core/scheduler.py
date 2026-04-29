@@ -238,12 +238,8 @@ class PhoenixScheduler:
         """将 Agent 执行结果推送到指定 channel。"""
         channel_name = task_cfg.channel.lower()
         chat_id = task_cfg.chat_id
-        max_preview = 500
 
-        message = (
-            f"**[定时任务] {task_cfg.name}**\n\n"
-            f"{response[:max_preview]}{'…' if len(response) > max_preview else ''}"
-        )
+        message = f"[{task_cfg.name}]\n\n{response}"
 
         try:
             if channel_name == "dingtalk":
