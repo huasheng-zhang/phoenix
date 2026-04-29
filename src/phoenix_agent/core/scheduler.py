@@ -225,8 +225,9 @@ class PhoenixScheduler:
                     logger.warning("Failed to activate skill '%s': %s", task_cfg.skill, e)
 
             # 执行 Agent
+            logger.info("Task '%s' running agent (prompt: %s)", task_cfg.name, task_cfg.prompt[:80])
             response = agent.run(task_cfg.prompt)
-            logger.info("Task '%s' completed, response length=%d", task_cfg.name, len(response))
+            logger.info("Task '%s' completed, response length=%d chars", task_cfg.name, len(response))
 
             # 推送结果
             self._send_result(task_cfg, response)
