@@ -305,31 +305,33 @@ class PhoenixScheduler:
 
         try:
             import asyncio
-            loop = asyncio.get_event_loop()
-            # 判断 chat_id 格式：群会话ID通常以 "oc_" 开头
-            if effective_chat_id.startswith("oc_"):
-                # 群聊消息
-                loop.run_until_complete(
-                    openapi.send_text_to_group(
-                        robot_code=robot_code,
-                        conversation_id=effective_chat_id,
-                        content=message,
+            # Scheduler jobs run in a thread pool — must create a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                if effective_chat_id.startswith("oc_"):
+                    loop.run_until_complete(
+                        openapi.send_text_to_group(
+                            robot_code=robot_code,
+                            conversation_id=effective_chat_id,
+                            content=message,
+                        )
                     )
-                )
-            else:
-                # 单聊消息，chat_id 是用户 ID 列表（逗号分隔）或单个用户ID
-                user_ids = [uid.strip() for uid in effective_chat_id.split(",") if uid.strip()]
-                if not user_ids:
-                    logger.warning("No valid user IDs in chat_id: %r", effective_chat_id)
-                    return
-                loop.run_until_complete(
-                    openapi.send_text_to_user(
-                        robot_code=robot_code,
-                        user_ids=user_ids,
-                        content=message,
+                else:
+                    user_ids = [uid.strip() for uid in effective_chat_id.split(",") if uid.strip()]
+                    if not user_ids:
+                        logger.warning("No valid user IDs in chat_id: %r", effective_chat_id)
+                        return
+                    loop.run_until_complete(
+                        openapi.send_text_to_user(
+                            robot_code=robot_code,
+                            user_ids=user_ids,
+                            content=message,
+                        )
                     )
-                )
-            logger.info("[scheduler] DingTalk push success for chat_id: %s", effective_chat_id[:20])
+                logger.info("[scheduler] DingTalk push success for chat_id: %s", effective_chat_id[:20])
+            finally:
+                loop.close()
         except Exception as e:
             logger.error("DingTalk send error: %s", e)
 
