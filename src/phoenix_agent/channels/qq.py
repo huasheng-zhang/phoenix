@@ -217,9 +217,14 @@ class QQChannel(BaseChannel):
             return None
 
         async def _handle(request: Request):
-            # Optional: verify access token
+            # Verify access token (required for security)
             auth = request.headers.get("Authorization", "")
-            if channel._access_token:
+            if not channel._access_token:
+                logger.warning(
+                    "[qq] No access_token configured — webhook is unprotected! "
+                    "Set 'access_token' in config.yaml channels.qq section."
+                )
+            else:
                 expected = f"Bearer {channel._access_token}"
                 if auth != expected:
                     return JSONResponse({"status": "forbidden"}, status_code=403)

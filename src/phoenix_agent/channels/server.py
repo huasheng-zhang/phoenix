@@ -55,12 +55,52 @@ import asyncio
 import importlib
 import logging
 import os
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter (lightweight, in-memory, no external deps)
+# ---------------------------------------------------------------------------
+
+class _RateLimiter:
+    """Token-bucket rate limiter keyed by client IP."""
+
+    def __init__(self, max_requests: int = 60, window_seconds: int = 60):
+        self._max = max_requests
+        self._window = window_seconds
+        self._buckets: Dict[str, List[float]] = defaultdict(list)
+
+    def is_allowed(self, key: str) -> bool:
+        """Return True if *key* has not exceeded the rate limit."""
+        now = time.monotonic()
+        bucket = self._buckets[key]
+        # Prune timestamps outside the window
+        cutoff = now - self._window
+        self._buckets[key] = bucket = [t for t in bucket if t > cutoff]
+        if len(bucket) >= self._max:
+            return False
+        bucket.append(now)
+        return True
+
+    def cleanup(self) -> None:
+        """Remove expired entries to prevent memory growth."""
+        now = time.monotonic()
+        cutoff = now - self._window
+        expired = [k for k, v in self._buckets.items()
+                   if not v or v[-1] <= cutoff]
+        for k in expired:
+            del self._buckets[k]
+
+
+# Singleton rate limiter instance (60 requests / 60 seconds per IP)
+_rate_limiter = _RateLimiter(max_requests=60, window_seconds=60)
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +209,45 @@ def build_app(
     http_routes.insert(0, Route("/health", endpoint=_health))
 
     app = Starlette(routes=http_routes)
+
+    # --- Rate-limiting middleware for webhook endpoints ---
+    async def _rate_limit_middleware(scope, receive, send):
+        if scope["type"] == "http":
+            # Skip rate limiting for health check
+            path = scope.get("path", "")
+            if path == "/health":
+                await app(scope, receive, send)
+                return
+
+            client_ip = (
+                scope.get("client", [None])[0]
+                or scope.get("headers", {})
+                    .get(b"x-forwarded-for", [b""])
+                    [0]
+                    .decode("utf-8", errors="ignore")
+                    .split(",")[0]
+                    .strip()
+                or "unknown"
+            )
+
+            if not _rate_limiter.is_allowed(client_ip):
+                from starlette.responses import JSONResponse as _JR
+                response = _JR(
+                    {"status": "too_many_requests",
+                     "error": "Rate limit exceeded. Try again later."},
+                    status_code=429,
+                )
+                await response(scope, receive, send)
+                return
+
+            # Periodic cleanup (roughly every ~1000 requests to this path)
+            if hash(client_ip) % 1000 == 0:
+                _rate_limiter.cleanup()
+
+        await app(scope, receive, send)
+
+    app = _rate_limit_middleware  # wrap the ASGI app
+
     return app, stream_channels, pool
 
 

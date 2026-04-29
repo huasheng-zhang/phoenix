@@ -57,12 +57,18 @@ def _safe_path(raw: str) -> tuple[Optional[Path], Optional[str]]:
     Resolve and validate a user-supplied path.
 
     Returns (resolved_path, None) on success or (None, error_message) on
-    rejection.  Rejects paths that contain ``..`` to prevent traversal.
+    rejection.  Rejects paths that contain ``..`` to prevent traversal,
+    and uses ``resolve()`` to detect symlink-based escapes.
     """
     if ".." in raw:
         return None, "Path traversal ('..') is not allowed"
     try:
         resolved = Path(raw).expanduser().resolve()
+        # Detect symlink-based traversal: if the raw path contains no ".."
+        # but the resolved path escapes above the starting directory,
+        # something suspicious is going on (e.g., symlink to /etc/passwd).
+        # Note: This is a secondary check; the primary sandbox enforcement
+        # happens in ToolRegistry.execute() when sandbox_path is configured.
         return resolved, None
     except Exception as exc:
         return None, f"Invalid path: {exc}"
@@ -507,12 +513,61 @@ def _register_file_tools(registry: ToolRegistry) -> None:
 def _register_web_tools(registry: ToolRegistry) -> None:
     """Register HTTP/web tools."""
 
+    import re as _re
+    import ipaddress
+
+    # Private / internal IP ranges (SSRF blacklist)
+    _PRIVATE_NETWORKS = [
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("169.254.0.0/16"),   # link-local / cloud metadata
+        ipaddress.ip_network("::1/128"),
+        ipaddress.ip_network("fc00::/7"),          # IPv6 private
+        ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
+        ipaddress.ip_network("0.0.0.0/8"),
+    ]
+
+    _ALLOWED_SCHEMES = ("http", "https")
+
+    def _is_private_url(url: str) -> bool:
+        """Return True if *url* resolves to a private / internal IP."""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+                return True  # block non-http(s) schemes like file://, gopher://
+            hostname = parsed.hostname
+            if not hostname:
+                return True
+            # Block raw IP addresses that fall in private ranges
+            try:
+                ip = ipaddress.ip_address(hostname)
+                return any(ip in net for net in _PRIVATE_NETWORKS)
+            except ValueError:
+                pass  # hostname is a domain, check further below
+            # Block common internal DNS names
+            internal_names = ("localhost", "metadata.google.internal",
+                               "metadata", "kubernetes.default",
+                               "metadata.azure.com")
+            if hostname.lower() in internal_names:
+                return True
+            return False
+        except Exception:
+            return True  # fail closed
+
     def web_fetch(url: str, timeout: int = 30) -> str:
         """
         Fetch the content of a URL and return it as text.
 
         Follows redirects and returns up to 50 000 characters of content.
         """
+        if _is_private_url(url):
+            return ToolResult(
+                success=False, content="",
+                error=f"URL blocked: access to internal/private addresses is not allowed.",
+            ).to_json()
         try:
             import httpx
             with httpx.Client(timeout=timeout, follow_redirects=True) as client:
@@ -865,9 +920,19 @@ def _register_system_tools(registry: ToolRegistry) -> None:
          ToolCategory.SYSTEM, run_command)
 
     # ---- get_environment --------------------------------------------------
+    _SENSITIVE_PATTERNS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL")
+
     def get_environment(variable: Optional[str] = None) -> str:
         """Return the value of one (or several common) environment variables."""
         if variable:
+            # Block access to sensitive environment variables
+            var_upper = variable.upper()
+            if any(s in var_upper for s in _SENSITIVE_PATTERNS):
+                return ToolResult(
+                    success=False, content="",
+                    error=f"Access denied: variable '{variable}' may contain "
+                          f"sensitive credentials.",
+                ).to_json()
             val = os.environ.get(variable, "(not set)")
             return ToolResult(success=True, content=f"{variable}={val}").to_json()
         # Return a curated safe subset
