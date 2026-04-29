@@ -68,6 +68,9 @@ send_guide.md
 *_result.txt
 *_out.txt
 *_err.txt
+full_test.txt
+t.txt
+/test_*.txt
 
 # Misc temp dirs
 ai_news_notifier/
