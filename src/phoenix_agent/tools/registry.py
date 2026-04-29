@@ -311,7 +311,9 @@ class ToolRegistry:
                 return ToolResult(success=True, content=json.dumps(result, ensure_ascii=False))
         except Exception as e:
             logger.exception("Tool execution error: %s", name)
-            return ToolResult(success=False, content="", error=f"Execution error: {str(e)}")
+            # Return a generic error to avoid leaking internal details to the LLM
+            return ToolResult(success=False, content="",
+                             error=f"Execution error: tool '{name}' failed unexpectedly")
 
     def list_tools(self) -> List[str]:
         return list(self._tools.keys())

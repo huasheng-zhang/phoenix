@@ -198,7 +198,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             )
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] Agent error: %s", exc)
-            response_text = f"⚠️ 处理消息时出错：{exc}"
+            response_text = "⚠️ 处理消息时出错，请稍后重试"
 
         reply_text = response_text or "(no response)"
         # reply_text() is sync (uses requests.post), run in executor to avoid
@@ -349,7 +349,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 )
             except Exception as exc:
                 self._logger.exception("[dingtalk][stream] Agent error on file: %s", exc)
-                response_text = f"⚠️ 处理文件时出错：{exc}"
+                response_text = "⚠️ 处理文件时出错，请稍后重试"
 
             reply_text = response_text or "文件已收到，但未生成回复。"
             loop = asyncio.get_event_loop()
@@ -361,13 +361,13 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             self._logger.error("[dingtalk][stream] File API error: %s", exc)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None, lambda: self.reply_text(f"⚠️ 下载文件失败：{exc}", incoming)
+                None, lambda: self.reply_text("⚠️ 下载文件失败，请稍后重试", incoming)
             )
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] File handling error: %s", exc)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None, lambda: self.reply_text(f"⚠️ 处理文件时出错：{exc}", incoming)
+                None, lambda: self.reply_text("⚠️ 处理文件时出错，请稍后重试", incoming)
             )
 
     @staticmethod

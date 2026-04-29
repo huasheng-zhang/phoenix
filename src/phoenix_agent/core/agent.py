@@ -236,7 +236,7 @@ class Agent:
 
             except Exception as e:
                 logger.exception("Error in agent loop")
-                final_response = f"I encountered an error: {str(e)}"
+                final_response = "I encountered an internal error while processing your request. Please try again."
                 break
 
         return final_response
@@ -311,7 +311,7 @@ class Agent:
                 logger.exception("Unexpected error executing tool %s", tool_name)
                 from phoenix_agent.tools.registry import ToolResult as TR
                 tool_result = TR(success=False, content="",
-                                 error=f"Internal error: {exc}")
+                                 error=f"Internal error: tool '{tool_name}' failed unexpectedly")
 
             # --- Fire callback (UI progress) ------------------------------
             if self.on_tool_call:

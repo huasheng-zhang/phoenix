@@ -206,7 +206,7 @@ class TelegramChannel(BaseChannel):
                 else:
                     raise
 
-        logger.debug("[telegram] Message sent to chat_id=%s", chat_id)
+        logger.debug("[telegram] Message sent to chat_id=%s", chat_id[:8])
 
     def _split_text(self, text: str) -> List[str]:
         """Split *text* into chunks no longer than ``_MAX_MESSAGE_LEN`` chars."""

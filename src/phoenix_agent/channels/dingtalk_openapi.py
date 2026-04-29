@@ -124,8 +124,11 @@ class _TokenManager:
                     data = await resp.json()
 
             if resp.status != 200 or "accessToken" not in data:
+                # Sanitize response to avoid leaking tokens in error messages
+                safe_data = {k: "***" if k.lower() in ("accesstoken", "token") else v
+                             for k, v in data.items()}
                 raise ChannelAPIError(
-                    f"Failed to get new access_token: HTTP {resp.status}, {data}"
+                    f"Failed to get new access_token: HTTP {resp.status}, {safe_data}"
                 )
 
             self._new_token = data["accessToken"]
@@ -162,8 +165,10 @@ class _TokenManager:
                     data = await resp.json()
 
             if resp.status != 200 or "access_token" not in data:
+                safe_data = {k: "***" if k.lower() in ("accesstoken", "access_token", "token") else v
+                             for k, v in data.items()}
                 raise ChannelAPIError(
-                    f"Failed to get old access_token: HTTP {resp.status}, {data}"
+                    f"Failed to get old access_token: HTTP {resp.status}, {safe_data}"
                 )
 
             self._old_token = data["access_token"]

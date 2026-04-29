@@ -225,7 +225,7 @@ class PhoenixScheduler:
                     logger.warning("Failed to activate skill '%s': %s", task_cfg.skill, e)
 
             # 执行 Agent
-            logger.info("Task '%s' running agent (prompt: %s)", task_cfg.name, task_cfg.prompt[:80])
+            logger.info("Task '%s' running agent (prompt: %d chars)", task_cfg.name, len(task_cfg.prompt))
             response = agent.run(task_cfg.prompt)
             logger.info("Task '%s' completed, response length=%d chars", task_cfg.name, len(response))
 
@@ -318,7 +318,7 @@ class PhoenixScheduler:
                 else:
                     user_ids = [uid.strip() for uid in effective_chat_id.split(",") if uid.strip()]
                     if not user_ids:
-                        logger.warning("No valid user IDs in chat_id: %r", effective_chat_id)
+                        logger.warning("No valid user IDs in chat_id: %s", effective_chat_id[:20])
                         return
                     loop.run_until_complete(
                         openapi.send_text_to_user(

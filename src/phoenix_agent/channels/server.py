@@ -410,7 +410,7 @@ async def _process_message(channel, pool, message) -> None:
     user_text = message.text.strip()
 
     if not user_text:
-        logger.debug("[server] Empty message from %s — ignoring", chat_id)
+        logger.debug("[server] Empty message from %s — ignoring", chat_id[:8])
         return
 
     logger.info(
@@ -432,7 +432,7 @@ async def _process_message(channel, pool, message) -> None:
     except Exception as exc:
         logger.exception("[server] Error processing message: %s", exc)
         try:
-            err_reply = ChannelReply(text=f"⚠️ 处理消息时出错：{exc}")
+            err_reply = ChannelReply(text="⚠️ 处理消息时出错，请稍后重试")
             await channel.send_message(chat_id, err_reply)
         except Exception:
             pass

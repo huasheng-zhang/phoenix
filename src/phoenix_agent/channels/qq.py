@@ -178,7 +178,7 @@ class QQChannel(BaseChannel):
                     "Use 'private:<user_id>' or 'group:<group_id>'.",
                 )
 
-        logger.debug("[qq] Message sent to %s", chat_id)
+        logger.debug("[qq] Message sent to %s", chat_id[:8])
 
     def _build_message(self, reply: ChannelReply) -> str:
         """

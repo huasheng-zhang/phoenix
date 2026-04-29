@@ -828,11 +828,18 @@ def _register_system_tools(registry: ToolRegistry) -> None:
 
     # ---- Dangerous command patterns (blocked unless allow_destructive=True) ----
     _DESTRUCTIVE_PATTERNS = [
+        # Unix
         "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){:|:&",
         "> /dev/sd", "chmod -R 777 /", "shutdown", "reboot",
         "halt", "poweroff", "init 0", "init 6",
         "curl | bash", "curl | sh", "wget | bash", "wget | sh",
         "nc -l", "ncat -l",  # reverse shell patterns
+        # Windows
+        "format c:", "del /f /s /q c:\\", "rd /s /q c:\\", "rmdir /s /q c:\\",
+        "net user ", "net localgroup administrators",
+        "reg delete hklm", "reg delete hkcu",
+        "powershell -enc", "powershell -encodedcommand",
+        "wmic /node:", "sc delete",
     ]
 
     def _is_destructive_command(cmd: str) -> bool:
