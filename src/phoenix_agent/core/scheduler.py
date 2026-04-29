@@ -264,7 +264,8 @@ class PhoenixScheduler:
         from phoenix_agent.channels.registry import ChannelRegistry
 
         registry = ChannelRegistry.get_instance()
-        channel = registry.get("dingtalk") if registry else None
+        # Use the running channel instance (set by server.py), not the class
+        channel = registry.get_instance_channel("dingtalk") if registry else None
 
         if not channel or not getattr(channel, "_enabled", False):
             logger.warning("DingTalk channel not enabled, cannot send scheduled message.")

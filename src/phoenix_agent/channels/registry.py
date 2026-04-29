@@ -24,6 +24,7 @@ class ChannelRegistry:
 
     def __init__(self) -> None:
         self._channels: Dict[str, Type[BaseChannel]] = {}
+        self._instances: Dict[str, BaseChannel] = {}
         self._load_builtin_channels()
 
     @classmethod
@@ -117,6 +118,14 @@ class ChannelRegistry:
             The registered class, or ``None``.
         """
         return self._channels.get(name)
+
+    def set_instance(self, name: str, instance: BaseChannel) -> None:
+        """Store a running channel instance for later retrieval (e.g. by scheduler)."""
+        self._instances[name] = instance
+
+    def get_instance_channel(self, name: str) -> Optional[BaseChannel]:
+        """Return the running channel instance, or None."""
+        return self._instances.get(name)
 
     def get_class(self, name: str) -> Type[BaseChannel]:
         """Return the class registered for *name* (raises KeyError if missing)."""

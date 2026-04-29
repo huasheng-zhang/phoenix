@@ -134,6 +134,9 @@ def build_app(
 
         channel.register_handler(_make_handler())
 
+        # Store instance in registry so scheduler can access it for push
+        registry.set_instance(ch_name, channel)
+
         # --- Route by mode ---
         if hasattr(channel, "start_stream") and callable(getattr(channel, "start_stream")):
             # Stream-mode channel — handled separately (no HTTP route needed)
