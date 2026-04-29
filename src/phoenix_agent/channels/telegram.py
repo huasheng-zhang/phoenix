@@ -29,6 +29,7 @@ Configuration (config.yaml)
         bot_token: "123456789:AAEXAMPLE-TOKEN"
         mode: webhook                  # webhook | polling
         webhook_path: /telegram/webhook
+        webhook_secret: "your-random-secret"  # Required for webhook security!
         allowed_updates:               # optional — defaults to ["message"]
           - message
           - callback_query
@@ -44,6 +45,8 @@ Dependencies
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import time
@@ -101,6 +104,7 @@ class TelegramChannel(BaseChannel):
         self._allowed_updates : List[str]     = cfg.get("allowed_updates", ["message"])
         self._superusers      : List[int]     = [int(x) for x in cfg.get("superusers", [])]
         self._command_prefix  : str           = cfg.get("command_prefix", "/")
+        self._webhook_secret  : Optional[str] = cfg.get("webhook_secret")
 
         # Long-polling state
         self._polling_task: Optional[asyncio.Task] = None
@@ -233,6 +237,25 @@ class TelegramChannel(BaseChannel):
             return None
 
         async def _handle(request: Request):
+            # --- Verify webhook secret token (if configured) ---
+            if channel._webhook_secret:
+                header_name = "X-Telegram-Bot-Api-Secret-Token"
+                token = request.headers.get(header_name, "")
+                if not hmac.compare_digest(token, channel._webhook_secret):
+                    logger.warning(
+                        "[telegram] Webhook auth failed: %s header mismatch", header_name
+                    )
+                    return JSONResponse(
+                        {"ok": False, "error": "Forbidden"},
+                        status_code=403,
+                    )
+            else:
+                logger.warning(
+                    "[telegram] No webhook_secret configured — "
+                    "anyone can send updates to this endpoint! "
+                    "Set 'webhook_secret' in config to enable verification."
+                )
+
             try:
                 payload: Dict = await request.json()
             except Exception:

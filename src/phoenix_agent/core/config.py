@@ -225,7 +225,7 @@ class ToolConfig:
     enabled: List[str] = field(default_factory=lambda: ["file", "web", "system", "utility"])
     disabled: List[str] = field(default_factory=list)
     sandbox_path: Optional[str] = None
-    allow_destructive: bool = True   # Needed for delete_file / run_command to work
+    allow_destructive: bool = False  # Must be explicitly enabled for safety
     max_file_size: int = 10 * 1024 * 1024  # 10MB
 
 
@@ -403,7 +403,7 @@ class Config:
             enabled=file_section.get("enabled", ["file", "web", "system", "utility"]),
             disabled=file_section.get("disabled", []),
             sandbox_path=file_section.get("sandbox_path"),
-            allow_destructive=file_section.get("allow_destructive", True),
+            allow_destructive=file_section.get("allow_destructive", False),
             max_file_size=file_section.get("max_file_size", 10 * 1024 * 1024),
         )
 

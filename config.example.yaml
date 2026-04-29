@@ -204,7 +204,7 @@ channels:
   # Two modes:
   #   webhook  — Telegram POSTs updates to Phoenix (needs public HTTPS URL).
   #              Set the webhook once:
-  #                curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR_DOMAIN/telegram/webhook"
+  #                curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR_DOMAIN/telegram/webhook&secret_token=YOUR_SECRET"
   #   polling  — Phoenix polls Telegram (no public URL required; good for dev).
   # --------------------------------------------------------------------------
   telegram:
@@ -212,6 +212,8 @@ channels:
     bot_token: "123456789:AAXXXXXXXXXXXXXXXXXX"
     mode: "webhook"                       # webhook | polling
     webhook_path: /telegram/webhook
+    webhook_secret: ""                    # IMPORTANT: set this for webhook mode!
+                                            # Must match the secret_token in setWebhook call
     superusers: []                        # Telegram user IDs with admin access
     command_prefix: "/"
 

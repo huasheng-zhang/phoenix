@@ -12,6 +12,7 @@ Design philosophy:
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, get_type_hints
 from dataclasses import dataclass, field
 from enum import Enum
@@ -236,6 +237,18 @@ class ToolRegistry:
             })
         return result
 
+    # Tools classified as destructive (irreversible or high-risk operations)
+    DESTRUCTIVE_TOOLS = frozenset({
+        "delete_file", "run_command", "move_file", "write_file", "edit_file",
+        "add_scheduled_task", "remove_scheduled_task",
+    })
+
+    # Tools that operate on the file system and can be sandboxed
+    FILE_TOOLS = frozenset({
+        "read_file", "write_file", "edit_file", "list_directory",
+        "create_directory", "move_file", "delete_file", "grep", "glob_files",
+    })
+
     def execute(
         self,
         name: str,
@@ -243,10 +256,46 @@ class ToolRegistry:
         sandbox_path: Optional[str] = None,
         allow_destructive: bool = False,
     ) -> ToolResult:
-        """Execute a tool by name with validated arguments."""
+        """Execute a tool by name with validated arguments.
+
+        Security gates:
+        - If ``sandbox_path`` is set and the tool is a FILE tool, all path
+          arguments are validated to fall within the sandbox directory.
+        - If ``allow_destructive`` is False and the tool is classified as
+          destructive, the call is rejected.
+        """
         tool_def = self.get(name)
         if not tool_def:
             return ToolResult(success=False, content="", error=f"Tool not found: {name}")
+
+        # --- Destructive-operation gate ---
+        is_destructive = name in self.DESTRUCTIVE_TOOLS or tool_def.allow_destructive
+        if is_destructive and not allow_destructive:
+            return ToolResult(
+                success=False, content="",
+                error=f"Tool '{name}' is a destructive operation. "
+                      f"Set allow_destructive=True in config to enable.",
+            )
+
+        # --- Sandbox path gate for file tools ---
+        if sandbox_path and name in self.FILE_TOOLS:
+            sandbox = Path(sandbox_path).resolve()
+            for arg_name, arg_value in arguments.items():
+                if not isinstance(arg_value, str):
+                    continue
+                if arg_name in (
+                    "file_path", "directory_path", "source_path",
+                    "destination_path", "path", "base_directory",
+                ):
+                    resolved = Path(arg_value).expanduser().resolve()
+                    try:
+                        resolved.relative_to(sandbox)
+                    except ValueError:
+                        return ToolResult(
+                            success=False, content="",
+                            error=f"Path '{arg_value}' is outside sandbox: {sandbox_path}",
+                        )
+
         errors = _validate_arguments(tool_def.parameters, arguments)
         if errors:
             return ToolResult(success=False, content="", error=f"Argument validation failed: {'; '.join(errors)}")

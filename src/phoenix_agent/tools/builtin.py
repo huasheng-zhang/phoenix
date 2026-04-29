@@ -771,6 +771,23 @@ def _register_web_tools(registry: ToolRegistry) -> None:
 def _register_system_tools(registry: ToolRegistry) -> None:
     """Register shell and OS tools."""
 
+    # ---- Dangerous command patterns (blocked unless allow_destructive=True) ----
+    _DESTRUCTIVE_PATTERNS = [
+        "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){:|:&",
+        "> /dev/sd", "chmod -R 777 /", "shutdown", "reboot",
+        "halt", "poweroff", "init 0", "init 6",
+        "curl | bash", "curl | sh", "wget | bash", "wget | sh",
+        "nc -l", "ncat -l",  # reverse shell patterns
+    ]
+
+    def _is_destructive_command(cmd: str) -> bool:
+        """Check if a command contains known destructive patterns."""
+        cmd_lower = cmd.lower().strip()
+        for pattern in _DESTRUCTIVE_PATTERNS:
+            if pattern in cmd_lower:
+                return True
+        return False
+
     # ---- run_command ------------------------------------------------------
     def run_command(command: str,
                     working_directory: Optional[str] = None,
@@ -786,6 +803,15 @@ def _register_system_tools(registry: ToolRegistry) -> None:
             shell:             "auto" (detect OS), "powershell", "cmd", or "bash".
         """
         timeout = min(timeout, 300)  # Safety cap
+
+        # Check for destructive commands (second line of defense;
+        # ToolRegistry.execute already gates on allow_destructive)
+        if _is_destructive_command(command):
+            return ToolResult(
+                success=False, content="",
+                error="Command blocked: detected a potentially destructive pattern. "
+                      "If this is intentional, enable allow_destructive in config.",
+            ).to_json()
 
         # Resolve working directory
         cwd: Optional[str] = None

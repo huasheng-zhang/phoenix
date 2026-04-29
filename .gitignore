@@ -44,7 +44,11 @@ Thumbs.db
 # Local test / scratch scripts
 send_*.py
 test_dingtalk_stream.py
+test_dingtalk_push.py
 extract_docx.py
+
+# Runtime config (contains API keys)
+config.yaml
 
 # Sensitive / personal files
 工作总结内容.txt
