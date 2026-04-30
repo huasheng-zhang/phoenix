@@ -404,6 +404,7 @@ a{color:var(--accent);text-decoration:none}
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
+      let confirmCardShown = false;  // track if a confirmation card is active
       let bubble = addMessage('assistant', '');
       const bubbleContent = bubble.querySelector('.msg-content');
 
@@ -422,7 +423,11 @@ a{color:var(--accent);text-decoration:none}
               // Tool execution result — check for confirmation request
               const tr = parsed.tool_result;
               if (tr.metadata && tr.metadata.needs_confirmation && tr.metadata.command) {
-                bubbleContent.innerHTML = renderConfirmCard(tr.metadata.command);
+                // Append LLM text above the card, then show card
+                let html = fullContent ? simpleMarkdown(fullContent) : '';
+                html += renderConfirmCard(tr.metadata.command);
+                bubbleContent.innerHTML = html;
+                confirmCardShown = true;
                 messagesEl.scrollTop = messagesEl.scrollHeight;
               } else {
                 // Other tool results: show briefly as system info
@@ -431,13 +436,20 @@ a{color:var(--accent);text-decoration:none}
                   : '⚠️ ' + (tr.error || (tr.tool_name || 'tool') + ' failed');
                 fullContent += '\n\n' + info;
                 bubbleContent.innerHTML = simpleMarkdown(fullContent);
+              }
                 messagesEl.scrollTop = messagesEl.scrollHeight;
               }
             } else if (parsed.error) {
               bubbleContent.innerHTML = simpleMarkdown('⚠️ ' + parsed.error);
             } else if (parsed.content) {
               fullContent += parsed.content;
-              bubbleContent.innerHTML = simpleMarkdown(fullContent);
+              if (confirmCardShown) {
+                // Append new text ABOVE the existing confirm card
+                const cardHtml = bubbleContent.querySelector('.confirm-card')?.outerHTML || '';
+                bubbleContent.innerHTML = simpleMarkdown(fullContent) + cardHtml;
+              } else {
+                bubbleContent.innerHTML = simpleMarkdown(fullContent);
+              }
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
           } catch(e) {}

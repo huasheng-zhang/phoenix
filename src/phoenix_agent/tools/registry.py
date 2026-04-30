@@ -52,10 +52,25 @@ class ToolResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"success": self.success, "content": self.content, "error": self.error, **self.metadata}
+        d = {"success": self.success, "content": self.content, "error": self.error}
+        if self.metadata:
+            d["metadata"] = self.metadata
+            # Also flatten metadata into top-level for backward compatibility
+            d.update(self.metadata)
+        return d
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ToolResult":
+        metadata = d.pop("metadata", {})
+        # Also extract known metadata keys from flattened top-level
+        standard_keys = {"success", "content", "error"}
+        for k in list(d.keys()):
+            if k not in standard_keys:
+                metadata.setdefault(k, d.pop(k))
+        return cls(**d, metadata=metadata)
 
 
 def _python_type_to_json_schema_type(python_type: Type) -> str:
@@ -306,6 +321,13 @@ class ToolRegistry:
             if isinstance(result, ToolResult):
                 return result
             elif isinstance(result, str):
+                # Try to restore a ToolResult from JSON (preserves metadata)
+                try:
+                    parsed = json.loads(result)
+                    if isinstance(parsed, dict) and "success" in parsed:
+                        return ToolResult.from_dict(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    pass
                 return ToolResult(success=True, content=result)
             else:
                 return ToolResult(success=True, content=json.dumps(result, ensure_ascii=False))
