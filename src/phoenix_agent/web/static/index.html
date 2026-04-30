@@ -737,7 +737,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       });
     }
 
-    const displayText=text||(pendingFiles.length?&#128206;' Sent '+pendingFiles.length+' file(s)':'');
+    const displayText=text||(pendingFiles.length?'\u{1f4c2} Sent '+pendingFiles.length+' file(s)':'');
     addMessage('user',displayText,attachHtml);
     inputEl.value='';autoResize();
     const attachments=[...pendingFiles];pendingFiles=[];renderAttachmentPreview();
