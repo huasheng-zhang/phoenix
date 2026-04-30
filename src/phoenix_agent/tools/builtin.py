@@ -1032,11 +1032,8 @@ def _register_system_tools(registry: ToolRegistry) -> None:
                               error=f"Error running command: {exc}").to_json()
 
     _reg(registry, "run_command",
-         "Execute a shell command. Low-risk commands (ls, cat, grep, git status, etc.) run "
-         "immediately. Risky commands (rm, pip install, git push, python scripts, etc.) "
-         "require user confirmation — the tool will return CONFIRM_REQUIRED, and you must "
-         "re-invoke with confirmed=True after the user approves. "
-         "Destructive commands are always blocked.",
+         "Execute a shell command and return its output. "
+         "Use this for any system operations: file listing, git, package installs, scripts, etc.",
          {"type": "object",
           "properties": {
               "command":           {"type": "string",  "description": "Command string to execute"},
