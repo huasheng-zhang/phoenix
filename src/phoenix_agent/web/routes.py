@@ -424,6 +424,119 @@ def build_web_routes(pool, config=None) -> list:
                 })
         return JSONResponse({"files": files[:50]})
 
+    # --- Config management API ---
+
+    async def _api_get_config(request: Request):
+        """GET /api/config — return full configuration (secrets masked)."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            cfg_data = cfg.to_dict()
+
+            # Mask sensitive fields
+            _mask_keys = ["api_key", "client_secret", "app_secret", "corp_secret",
+                          "bot_token", "access_token", "secret", "token",
+                          "encoding_aes_key", "webhook_secret", "webhook_url"]
+            def _mask(obj, parent_key=""):
+                if isinstance(obj, dict):
+                    out = {}
+                    for k, v in obj.items():
+                        if k in _mask_keys and v and isinstance(v, str) and len(v) > 6:
+                            out[k] = v[:3] + "***" + v[-3:]
+                        else:
+                            out[k] = _mask(v, k)
+                    return out
+                elif isinstance(obj, list):
+                    return [_mask(item) for item in obj]
+                return obj
+
+            masked = _mask(cfg_data)
+            # Also add raw _file_config (masked) for full YAML visibility
+            raw_masked = _mask(getattr(cfg, "_file_config", {}))
+            masked["raw_config"] = raw_masked
+
+            return JSONResponse(masked)
+        except Exception as exc:
+            logger.exception("[web] Error reading config")
+            return JSONResponse({"error": "Failed to read config"}, status_code=500)
+
+    async def _api_update_config(request: Request):
+        """PUT /api/config — update a section of config.yaml.
+
+        Body: {"section": "provider|agent|tools|web_search|channels|scheduler|skills",
+               "data": {...}}
+        Only the specified section is overwritten. Other sections remain unchanged.
+        """
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+            section = body.get("section", "").strip()
+            data = body.get("data", {})
+
+            if not section or not isinstance(data, dict):
+                return JSONResponse({"error": "section (string) and data (object) required"},
+                                    status_code=400)
+
+            allowed_sections = {"provider", "agent", "tools", "web_search",
+                                "channels", "scheduler", "skills", "storage"}
+            if section not in allowed_sections:
+                return JSONResponse(
+                    {"error": f"Invalid section. Allowed: {', '.join(sorted(allowed_sections))}"},
+                    status_code=400)
+
+            config_path = getattr(cfg, "config_file", None)
+            if not config_path or not config_path.exists():
+                return JSONResponse({"error": "Config file not found"}, status_code=500)
+
+            import yaml
+            file_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            file_data[section] = data
+            config_path.write_text(
+                yaml.safe_dump(file_data, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            # Invalidate global config cache so next read picks up changes
+            from phoenix_agent.core.config import reset_config
+            reset_config()
+
+            return JSONResponse({"message": f"Section '{section}' updated. Restart or reload for full effect.",
+                                 "section": section})
+        except Exception as exc:
+            logger.exception("[web] Error updating config")
+            return JSONResponse({"error": "Failed to update config"}, status_code=500)
+
+    # --- Skills management API ---
+
+    async def _api_list_skills(request: Request):
+        """GET /api/skills — list all discovered skills."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            from phoenix_agent.skills.registry import SkillRegistry
+            reg = SkillRegistry()
+            reg.discover()
+            skills = []
+            for name, skill in reg._skills.items():
+                m = skill.manifest
+                skills.append({
+                    "name": m.name,
+                    "version": m.version,
+                    "description": m.description,
+                    "triggers": m.triggers,
+                    "tools": m.tools,
+                    "source_path": str(m.source_path),
+                })
+            skills.sort(key=lambda s: s["name"])
+            return JSONResponse({"skills": skills, "count": len(skills)})
+        except Exception as exc:
+            logger.exception("[web] Error listing skills")
+            return JSONResponse({"error": str(exc)}, status_code=500)
+
     # --- Routes ---
     routes = [
         Route("/", endpoint=_serve_index, methods=["GET"]),
@@ -435,6 +548,9 @@ def build_web_routes(pool, config=None) -> list:
         Route("/api/upload", endpoint=_api_upload, methods=["POST"]),
         Route("/api/download", endpoint=_api_download, methods=["GET"]),
         Route("/api/files", endpoint=_api_list_files, methods=["GET"]),
+        Route("/api/config", endpoint=_api_get_config, methods=["GET"]),
+        Route("/api/config", endpoint=_api_update_config, methods=["PUT"]),
+        Route("/api/skills", endpoint=_api_list_skills, methods=["GET"]),
     ]
 
     return routes

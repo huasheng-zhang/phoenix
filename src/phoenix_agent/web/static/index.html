@@ -7,61 +7,126 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d1117;--surface:#161b22;--border:#30363d;
-  --text:#c9d1d9;--text-dim:#8b949e;--text-bright:#f0f6fc;
-  --accent:#58a6ff;--accent-hover:#79c0ff;
-  --user-bg:#1f3a5f;--user-border:#2d5a8e;
-  --bot-bg:#21262d;--bot-border:#30363d;
-  --danger:#f85149;--success:#3fb950;--warning:#d29922;
-  --radius:12px;--radius-sm:8px;
+  --bg:#0a0e14;--surface:#12171e;--surface2:#1a2030;--surface3:#222b3a;
+  --border:#2a3545;--border-light:#354050;
+  --text:#c5cdd9;--text-dim:#6b7b8f;--text-bright:#e8edf4;
+  --accent:#5b9cf5;--accent-hover:#7cb8ff;--accent-bg:rgba(91,156,245,.1);
+  --user-bg:#1a3352;--user-border:#2a5a8f;
+  --bot-bg:#161d28;--bot-border:#2a3545;
+  --danger:#f05050;--success:#45c26a;--warning:#e0a030;
+  --radius:12px;--radius-sm:8px;--radius-xs:6px;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sidebar-w:260px;--panel-w:380px;
+  --transition:all .2s ease;
 }
-html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6}
+html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;overflow:hidden}
 a{color:var(--accent);text-decoration:none}
-::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
 
-/* --- Layout --- */
-.app{display:flex;flex-direction:column;height:100vh;max-width:960px;margin:0 auto}
+/* === LAYOUT === */
+.app{display:flex;height:100vh;width:100vw}
 
-/* --- Header --- */
-.header{
+/* === SIDEBAR === */
+.sidebar{
+  width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;transition:var(--transition);
+  z-index:20;
+}
+.sidebar-header{
+  padding:16px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--border);
+}
+.sidebar-logo{
+  width:34px;height:34px;border-radius:10px;
+  background:linear-gradient(135deg,#5b9cf5,#8b5cf6);
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;color:#fff;font-weight:700;
+}
+.sidebar-brand{font-size:15px;font-weight:600;color:var(--text-bright)}
+.sidebar-brand small{display:block;font-size:11px;color:var(--text-dim);font-weight:400;margin-top:1px}
+
+/* New chat button */
+.new-chat-btn{
+  margin:12px 12px 0;padding:10px 16px;
+  border:1px dashed var(--border-light);border-radius:var(--radius-sm);
+  background:transparent;color:var(--text);cursor:pointer;
+  font-size:13px;font-family:var(--font);transition:var(--transition);
+  display:flex;align-items:center;gap:8px;
+}
+.new-chat-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+
+/* Session list */
+.session-list{flex:1;overflow-y:auto;padding:8px 8px}
+.session-item{
+  padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;
+  font-size:13px;color:var(--text-dim);transition:var(--transition);
+  margin-bottom:2px;display:flex;align-items:center;gap:8px;
+}
+.session-item:hover{background:var(--surface2);color:var(--text)}
+.session-item.active{background:var(--accent-bg);color:var(--accent);font-weight:500}
+.session-item .si-icon{font-size:14px;flex-shrink:0;opacity:.6}
+
+/* Sidebar footer */
+.sidebar-footer{
+  padding:8px;border-top:1px solid var(--border);
+}
+.sidebar-menu-btn{
+  width:100%;padding:10px 12px;border:none;border-radius:var(--radius-sm);
+  background:transparent;color:var(--text-dim);cursor:pointer;
+  font-size:13px;font-family:var(--font);text-align:left;
+  display:flex;align-items:center;gap:10px;transition:var(--transition);
+}
+.sidebar-menu-btn:hover{background:var(--surface2);color:var(--text)}
+
+/* === MAIN CHAT === */
+.chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
+
+/* Top bar */
+.topbar{
   display:flex;align-items:center;justify-content:space-between;
-  padding:12px 20px;border-bottom:1px solid var(--border);
+  padding:10px 20px;border-bottom:1px solid var(--border);
   background:var(--surface);flex-shrink:0;
 }
-.header h1{font-size:18px;font-weight:600;color:var(--text-bright)}
-.header h1 span{color:var(--accent)}
-.header-actions{display:flex;gap:8px}
-.btn{
-  padding:6px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);
-  background:var(--surface);color:var(--text);cursor:pointer;font-size:13px;
-  font-family:var(--font);transition:all .15s;
+.topbar-left{display:flex;align-items:center;gap:10px}
+.topbar-toggle{
+  background:none;border:none;color:var(--text-dim);font-size:18px;
+  cursor:pointer;padding:4px;line-height:1;transition:var(--transition);
 }
-.btn:hover{background:var(--border);color:var(--text-bright)}
-.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
-.btn-accent:hover{background:var(--accent-hover)}
-.btn-danger{border-color:var(--danger);color:var(--danger)}
-.btn-danger:hover{background:var(--danger);color:#fff}
+.topbar-toggle:hover{color:var(--text)}
+.topbar-title{font-size:14px;color:var(--text-dim)}
+.topbar-model{font-size:12px;color:var(--text-dim);background:var(--surface2);padding:2px 8px;border-radius:20px}
+.topbar-right{display:flex;gap:6px}
+.topbar-btn{
+  width:32px;height:32px;border:none;border-radius:var(--radius-xs);
+  background:var(--surface2);color:var(--text-dim);cursor:pointer;
+  font-size:14px;display:flex;align-items:center;justify-content:center;
+  transition:var(--transition);
+}
+.topbar-btn:hover{background:var(--surface3);color:var(--text)}
 
-/* --- Messages --- */
+/* === MESSAGES === */
 .messages{
-  flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;
+  flex:1;overflow-y:auto;padding:20px 0;display:flex;flex-direction:column;gap:6px;
 }
-.message{display:flex;gap:10px;max-width:85%;animation:fadeIn .2s ease}
-.message.user{align-self:flex-end;flex-direction:row-reverse}
+.message{display:flex;gap:12px;max-width:820px;width:100%;margin:0 auto;padding:0 24px;animation:fadeIn .25s ease}
+.message.user{flex-direction:row-reverse}
 .message-avatar{
-  width:32px;height:32px;border-radius:50%;flex-shrink:0;
+  width:34px;height:34px;border-radius:10px;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;font-size:14px;
-  font-weight:600;
+  font-weight:600;margin-top:2px;
 }
-.message.user .message-avatar{background:var(--user-bg);color:var(--accent)}
-.message.assistant .message-avatar{background:var(--accent);color:#fff}
+.message.user .message-avatar{background:var(--user-bg);color:var(--accent);border:1px solid var(--user-border)}
+.message.assistant .message-avatar{
+  background:linear-gradient(135deg,#5b9cf5,#8b5cf6);color:#fff;
+}
+.message-body{max-width:75%;min-width:0}
 .message-bubble{
-  padding:10px 16px;border-radius:var(--radius);
-  font-size:14px;line-height:1.7;word-break:break-word;
+  padding:12px 16px;border-radius:16px;
+  font-size:14px;line-height:1.75;word-break:break-word;
 }
 .message.user .message-bubble{
   background:var(--user-bg);border:1px solid var(--user-border);
@@ -71,292 +136,430 @@ a{color:var(--accent);text-decoration:none}
   background:var(--bot-bg);border:1px solid var(--bot-border);
   border-top-left-radius:4px;
 }
-.message-bubble p{margin:6px 0}
-.message-bubble p:first-child{margin-top:0}
-.message-bubble p:last-child{margin-bottom:0}
-.message-bubble code{
-  background:rgba(110,118,129,.2);padding:2px 6px;border-radius:4px;
-  font-family:var(--mono);font-size:13px;
-}
-.message-bubble pre{
-  background:#0d1117;border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:12px;margin:8px 0;overflow-x:auto;
-}
-.message-bubble pre code{background:none;padding:0;font-size:13px;color:var(--text)}
-.message-time{font-size:11px;color:var(--text-dim);margin-top:4px;text-align:right}
-.message.user .message-time{text-align:left}
+.message-time{font-size:11px;color:var(--text-dim);margin-top:4px;padding:0 4px}
+.message.user .message-time{text-align:right}
 
-/* --- Typing indicator --- */
+/* Markdown */
+.md p{margin:4px 0}
+.md p:first-child{margin-top:0}
+.md p:last-child{margin-bottom:0}
+.md strong{color:var(--text-bright);font-weight:600}
+.md em{color:var(--text);font-style:italic}
+.md code{
+  background:rgba(91,156,245,.12);color:var(--accent-hover);
+  padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:13px;
+}
+.md pre{
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:14px;margin:8px 0;overflow-x:auto;position:relative;
+}
+.md pre code{background:none;padding:0;font-size:13px;color:var(--text)}
+.md pre .copy-btn{
+  position:absolute;top:6px;right:6px;padding:3px 8px;
+  border:1px solid var(--border);border-radius:4px;
+  background:var(--surface);color:var(--text-dim);font-size:11px;
+  cursor:pointer;opacity:0;transition:opacity .15s;
+}
+.md pre:hover .copy-btn{opacity:1}
+.md pre .copy-btn:hover{color:var(--text);border-color:var(--border-light)}
+.md ul,.md ol{padding-left:20px;margin:6px 0}
+.md li{margin:2px 0}
+.md h1,.md h2,.md h3,.md h4{margin:14px 0 6px;color:var(--text-bright)}
+.md h1{font-size:18px}.md h2{font-size:16px}.md h3{font-size:14px}
+.md blockquote{border-left:3px solid var(--accent);padding-left:12px;margin:8px 0;color:var(--text-dim)}
+.md table{border-collapse:collapse;margin:8px 0;width:100%}
+.md th,.md td{border:1px solid var(--border);padding:6px 10px;font-size:13px}
+.md th{background:var(--surface);color:var(--text-bright)}
+.md a{color:var(--accent);text-decoration:underline}
+.md hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+
+/* Typing indicator */
 .typing{
-  display:flex;gap:10px;max-width:85%;align-items:center;
+  display:flex;gap:12px;max-width:820px;width:100%;margin:0 auto;padding:0 24px;
+  align-items:flex-start;
 }
 .typing-avatar{
-  width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
+  width:34px;height:34px;border-radius:10px;flex-shrink:0;
+  background:linear-gradient(135deg,#5b9cf5,#8b5cf6);color:#fff;
   display:flex;align-items:center;justify-content:center;font-size:14px;
 }
 .typing-dots{
   background:var(--bot-bg);border:1px solid var(--bot-border);
-  border-radius:var(--radius);padding:12px 20px;display:flex;gap:5px;
+  border-radius:16px;border-top-left-radius:4px;
+  padding:14px 20px;display:flex;gap:5px;
 }
 .typing-dots span{
-  width:8px;height:8px;border-radius:50%;background:var(--text-dim);
+  width:7px;height:7px;border-radius:50%;background:var(--text-dim);
   animation:bounce .6s infinite alternate;
 }
 .typing-dots span:nth-child(2){animation-delay:.15s}
 .typing-dots span:nth-child(3){animation-delay:.3s}
-@keyframes bounce{to{transform:translateY(-6px);opacity:.4}}
+@keyframes bounce{to{transform:translateY(-5px);opacity:.4}}
 
-/* --- Input area --- */
-.input-area{
-  padding:16px 20px;border-top:1px solid var(--border);
-  background:var(--surface);flex-shrink:0;
-}
-.input-wrapper{
-  display:flex;gap:10px;align-items:flex-end;
-}
-.input-wrapper textarea{
-  flex:1;resize:none;border:1px solid var(--border);border-radius:var(--radius);
-  background:var(--bg);color:var(--text);padding:12px 16px;font-size:14px;
-  font-family:var(--font);line-height:1.5;max-height:150px;min-height:44px;
-  transition:border-color .15s;
-}
-.input-wrapper textarea:focus{outline:none;border-color:var(--accent)}
-.input-wrapper textarea::placeholder{color:var(--text-dim)}
-.send-btn{
-  width:44px;height:44px;border:none;border-radius:var(--radius);
-  background:var(--accent);color:#fff;cursor:pointer;font-size:18px;
-  display:flex;align-items:center;justify-content:center;
-  transition:background .15s;flex-shrink:0;
-}
-.send-btn:hover{background:var(--accent-hover)}
-.send-btn:disabled{opacity:.4;cursor:not-allowed}
-
-/* --- Status bar --- */
-.status-bar{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:6px 20px;border-top:1px solid var(--border);
-  font-size:12px;color:var(--text-dim);background:var(--surface);
-}
-.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
-.status-dot.online{background:var(--success)}
-.status-dot.offline{background:var(--danger)}
-
-/* --- Empty state --- */
+/* Empty state */
 .empty-state{
   flex:1;display:flex;align-items:center;justify-content:center;
   flex-direction:column;gap:12px;color:var(--text-dim);
 }
-.empty-state .icon{font-size:48px;opacity:.3}
-.empty-state p{font-size:14px}
+.empty-state .icon{font-size:56px;opacity:.2}
+.empty-state p{font-size:14px;max-width:320px;text-align:center;line-height:1.6}
 
-/* --- Responsive --- */
-@media(max-width:640px){
-  .header{padding:10px 14px}
-  .messages{padding:14px}
-  .input-area{padding:12px 14px}
-  .message{max-width:92%}
+/* === INPUT AREA === */
+.input-area{
+  padding:12px 24px 16px;border-top:1px solid var(--border);
+  background:var(--surface);flex-shrink:0;
 }
-
-/* --- Markdown rendering helpers --- */
-.msg-content ul,.msg-content ol{padding-left:20px;margin:6px 0}
-.msg-content li{margin:2px 0}
-.msg-content h1,.msg-content h2,.msg-content h3{margin:12px 0 6px;color:var(--text-bright)}
-.msg-content blockquote{border-left:3px solid var(--accent);padding-left:12px;margin:8px 0;color:var(--text-dim)}
-.msg-content table{border-collapse:collapse;margin:8px 0;width:100%}
-.msg-content th,.msg-content td{border:1px solid var(--border);padding:6px 10px;font-size:13px}
-.msg-content th{background:var(--surface);color:var(--text-bright)}
-.msg-content a{color:var(--accent);text-decoration:underline}
-
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-/* --- Command confirmation card --- */
-.confirm-card{
-  background:rgba(210,153,34,.08);border:1px solid var(--warning);
-  border-radius:var(--radius);padding:12px 16px;margin:8px 0;
-}
-.confirm-card .confirm-cmd{
-  font-family:var(--mono);font-size:13px;background:var(--bg);
-  padding:6px 10px;border-radius:6px;margin:6px 0;word-break:break-all;
-  color:var(--text-bright);
-}
-.confirm-card .confirm-label{
-  font-size:13px;color:var(--warning);font-weight:600;margin-bottom:4px;
-}
-.confirm-actions{display:flex;gap:8px;margin-top:8px}
-.btn-confirm{
-  padding:6px 16px;border:none;border-radius:var(--radius-sm);
-  background:var(--warning);color:#000;cursor:pointer;font-size:13px;
-  font-weight:600;transition:all .15s;
-}
-.btn-confirm:hover{background:#e3b341}
-.btn-cancel-confirm{
-  padding:6px 16px;border:1px solid var(--border);border-radius:var(--radius-sm);
-  background:transparent;color:var(--text-dim);cursor:pointer;font-size:13px;
-  transition:all .15s;
-}
-.btn-cancel-confirm:hover{background:var(--border);color:var(--text)}
-
-/* --- File upload --- */
+.attachment-preview{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 8px}
 .file-attachment{
-  display:flex;align-items:center;gap:8px;padding:6px 12px;
-  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
-  margin:4px 0;font-size:13px;color:var(--text);max-width:300px;
+  display:flex;align-items:center;gap:6px;padding:5px 10px;
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-xs);
+  font-size:12px;color:var(--text);max-width:240px;
 }
-.file-attachment .file-icon{font-size:16px;flex-shrink:0}
+.file-attachment .file-icon{font-size:14px;flex-shrink:0}
 .file-attachment .file-info{flex:1;min-width:0}
-.file-attachment .file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-bright)}
-.file-attachment .file-size{font-size:11px;color:var(--text-dim)}
-.file-attachment .file-remove{
-  cursor:pointer;color:var(--text-dim);font-size:14px;padding:0 4px;
-  flex-shrink:0;transition:color .15s;
-}
+.file-attachment .file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-bright);font-size:12px}
+.file-attachment .file-size{font-size:10px;color:var(--text-dim)}
+.file-attachment .file-remove{cursor:pointer;color:var(--text-dim);font-size:13px;padding:0 2px;transition:color .15s}
 .file-attachment .file-remove:hover{color:var(--danger)}
-.file-attachment img.file-thumb{
-  width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;
+.file-attachment img.file-thumb{width:28px;height:28px;object-fit:cover;border-radius:4px;flex-shrink:0}
+.input-wrapper{display:flex;gap:8px;align-items:flex-end}
+.input-wrapper textarea{
+  flex:1;resize:none;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--bg);color:var(--text);padding:10px 14px;font-size:14px;
+  font-family:var(--font);line-height:1.5;max-height:140px;min-height:42px;
+  transition:var(--transition);
 }
-.attachment-preview{
-  display:flex;flex-wrap:wrap;gap:6px;padding:8px 20px 0;
+.input-wrapper textarea:focus{outline:none;border-color:var(--accent)}
+.input-wrapper textarea::placeholder{color:var(--text-dim)}
+.send-btn{
+  width:42px;height:42px;border:none;border-radius:var(--radius);
+  background:var(--accent);color:#fff;cursor:pointer;font-size:16px;
+  display:flex;align-items:center;justify-content:center;
+  transition:var(--transition);flex-shrink:0;
 }
-.file-drop-highlight{
-  border:2px dashed var(--accent)!important;background:rgba(88,166,255,.05)!important;
-}
+.send-btn:hover{background:var(--accent-hover)}
+.send-btn:disabled{opacity:.3;cursor:not-allowed}
+.file-drop-highlight{border:2px dashed var(--accent)!important;background:var(--accent-bg)!important}
+
+/* Attachment in message */
 .msg-attachment{
   display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
   background:var(--bg);border:1px solid var(--border);border-radius:6px;
-  font-size:13px;margin-top:6px;
+  font-size:12px;margin-top:6px;
 }
 .msg-attachment a{color:var(--accent);text-decoration:none}
 .msg-attachment a:hover{text-decoration:underline}
-.msg-attachment img.msg-thumb{
-  width:32px;height:32px;object-fit:cover;border-radius:4px;
-}
+.msg-attachment img.msg-thumb{width:28px;height:28px;object-fit:cover;border-radius:4px}
 
-/* --- File panel --- */
-.file-panel-overlay{
-  position:fixed;top:0;left:0;width:100%;height:100%;
-  background:rgba(0,0,0,.5);z-index:100;display:none;
+/* Confirm card */
+.confirm-card{
+  background:rgba(224,160,48,.06);border:1px solid var(--warning);
+  border-radius:var(--radius-sm);padding:12px 14px;margin:8px 0;
 }
-.file-panel-overlay.open{display:flex;justify-content:flex-end}
-.file-panel{
-  width:340px;max-width:90vw;height:100%;
+.confirm-card .confirm-cmd{
+  font-family:var(--mono);font-size:12px;background:var(--bg);
+  padding:8px 10px;border-radius:6px;margin:6px 0;word-break:break-all;
+  color:var(--text-bright);
+}
+.confirm-card .confirm-label{font-size:12px;color:var(--warning);font-weight:600;margin-bottom:4px}
+.confirm-actions{display:flex;gap:8px;margin-top:8px}
+.btn-confirm{
+  padding:6px 16px;border:none;border-radius:var(--radius-xs);
+  background:var(--warning);color:#000;cursor:pointer;font-size:12px;
+  font-weight:600;transition:var(--transition);
+}
+.btn-confirm:hover{background:#eab840}
+.btn-cancel-confirm{
+  padding:6px 16px;border:1px solid var(--border);border-radius:var(--radius-xs);
+  background:transparent;color:var(--text-dim);cursor:pointer;font-size:12px;
+  transition:var(--transition);
+}
+.btn-cancel-confirm:hover{background:var(--surface2);color:var(--text)}
+
+/* Sent file card */
+.sent-file-card{
+  display:inline-flex;align-items:center;gap:10px;padding:10px 14px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);margin-top:8px;max-width:320px;
+}
+.sent-file-card .sfc-icon{font-size:24px;flex-shrink:0}
+.sent-file-card .sfc-info{flex:1;min-width:0}
+.sent-file-card .sfc-name{font-size:12px;color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sent-file-card .sfc-size{font-size:10px;color:var(--text-dim)}
+.sent-file-card .sfc-dl{
+  display:inline-flex;align-items:center;gap:4px;padding:5px 12px;
+  background:var(--accent);color:#fff;border-radius:var(--radius-xs);
+  font-size:11px;text-decoration:none;flex-shrink:0;transition:var(--transition);
+}
+.sent-file-card .sfc-dl:hover{background:var(--accent-hover)}
+.sent-file-card img.sfc-thumb{width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* === STATUS BAR === */
+.status-bar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:5px 24px;border-top:1px solid var(--border);
+  font-size:11px;color:var(--text-dim);background:var(--surface);flex-shrink:0;
+}
+.status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+.status-dot.online{background:var(--success)}
+.status-dot.offline{background:var(--danger)}
+.status-dot.thinking{background:var(--warning);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* === SETTINGS PANEL === */
+.panel-overlay{
+  position:fixed;top:0;right:0;width:100%;height:100%;
+  background:rgba(0,0,0,.45);z-index:50;display:none;
+  backdrop-filter:blur(2px);
+}
+.panel-overlay.open{display:flex;justify-content:flex-end}
+.settings-panel{
+  width:var(--panel-w);max-width:95vw;height:100%;
   background:var(--surface);border-left:1px solid var(--border);
   display:flex;flex-direction:column;animation:slideIn .2s ease;
 }
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
-.file-panel-header{
+.panel-header{
   display:flex;align-items:center;justify-content:space-between;
-  padding:14px 16px;border-bottom:1px solid var(--border);
-  font-size:15px;font-weight:600;color:var(--text-bright);
+  padding:16px 20px;border-bottom:1px solid var(--border);
 }
-.file-panel-close{
-  background:none;border:none;color:var(--text-dim);font-size:20px;
-  cursor:pointer;padding:0 4px;line-height:1;
+.panel-header h2{font-size:16px;font-weight:600;color:var(--text-bright)}
+.panel-close{
+  background:none;border:none;color:var(--text-dim);font-size:22px;
+  cursor:pointer;padding:0 2px;line-height:1;transition:var(--transition);
 }
-.file-panel-close:hover{color:var(--text)}
-.file-panel-list{
-  flex:1;overflow-y:auto;padding:8px;
+.panel-close:hover{color:var(--text)}
+.panel-body{flex:1;overflow-y:auto;padding:16px 20px}
+
+/* Tabs */
+.panel-tabs{
+  display:flex;gap:4px;padding:12px 20px 0;border-bottom:1px solid var(--border);
 }
-.file-panel-item{
-  display:flex;align-items:center;gap:10px;padding:8px 10px;
-  border-radius:var(--radius-sm);cursor:pointer;transition:background .1s;
+.panel-tab{
+  padding:8px 14px;border:none;border-radius:var(--radius-xs) var(--radius-xs) 0 0;
+  background:transparent;color:var(--text-dim);cursor:pointer;
+  font-size:12px;font-family:var(--font);transition:var(--transition);
+  border-bottom:2px solid transparent;margin-bottom:-1px;
 }
-.file-panel-item:hover{background:var(--bg)}
-.file-panel-item .fp-icon{font-size:20px;flex-shrink:0}
-.file-panel-item .fp-info{flex:1;min-width:0}
-.file-panel-item .fp-name{
-  font-size:13px;color:var(--text-bright);overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;
+.panel-tab:hover{color:var(--text);background:var(--surface2)}
+.panel-tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--surface2)}
+
+/* Form */
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:5px;font-weight:500}
+.form-input{
+  width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-xs);
+  background:var(--bg);color:var(--text);font-size:13px;font-family:var(--font);
+  transition:var(--transition);
 }
-.file-panel-item .fp-meta{font-size:11px;color:var(--text-dim)}
-.file-panel-item .fp-dl{
-  color:var(--accent);font-size:14px;flex-shrink:0;opacity:.6;
-  transition:opacity .15s;
+.form-input:focus{outline:none;border-color:var(--accent)}
+.form-input::placeholder{color:var(--text-dim)}
+textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
+.form-hint{font-size:11px;color:var(--text-dim);margin-top:3px}
+.form-row{display:flex;gap:12px}
+.form-row .form-group{flex:1}
+.form-switch{
+  display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;
 }
-.file-panel-item:hover .fp-dl{opacity:1}
-.file-panel-empty{
-  padding:40px 20px;text-align:center;color:var(--text-dim);font-size:13px;
+.form-switch input[type=checkbox]{
+  width:36px;height:20px;border:none;border-radius:10px;
+  background:var(--border);cursor:pointer;position:relative;appearance:none;
+  transition:var(--transition);
+}
+.form-switch input[type=checkbox]::after{
+  content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;
+  border-radius:50%;background:#fff;transition:var(--transition);
+}
+.form-switch input[type=checkbox]:checked{background:var(--accent)}
+.form-switch input[type=checkbox]:checked::after{left:18px}
+.btn-save{
+  width:100%;padding:10px;border:none;border-radius:var(--radius-sm);
+  background:var(--accent);color:#fff;cursor:pointer;font-size:13px;
+  font-family:var(--font);font-weight:500;transition:var(--transition);margin-top:8px;
+}
+.btn-save:hover{background:var(--accent-hover)}
+.btn-save:disabled{opacity:.5;cursor:not-allowed}
+
+/* Channel cards */
+.channel-card{
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:12px 14px;margin-bottom:8px;
+}
+.channel-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.channel-card-name{font-size:13px;font-weight:600;color:var(--text-bright);display:flex;align-items:center;gap:6px}
+.channel-card-name .ch-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim)}
+.channel-card-name .ch-dot.on{background:var(--success)}
+.channel-card-fields{display:flex;flex-direction:column;gap:6px}
+
+/* Skill cards */
+.skill-card{
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:12px 14px;margin-bottom:8px;
+}
+.skill-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.skill-card-name{font-size:13px;font-weight:600;color:var(--accent)}
+.skill-card-ver{font-size:11px;color:var(--text-dim);background:var(--bg);padding:1px 6px;border-radius:10px}
+.skill-card-desc{font-size:12px;color:var(--text-dim);margin-bottom:6px}
+.skill-card-triggers{display:flex;flex-wrap:wrap;gap:4px}
+.skill-tag{
+  font-size:10px;padding:2px 8px;border-radius:10px;
+  background:var(--accent-bg);color:var(--accent);border:1px solid rgba(91,156,245,.2);
 }
 
-/* --- Sent file card (agent sends to user) --- */
-.sent-file-card{
-  display:inline-flex;align-items:center;gap:10px;padding:10px 14px;
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);margin-top:8px;max-width:340px;
+/* === FILE PANEL === */
+.file-panel-overlay{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.45);z-index:50;display:none;
+  backdrop-filter:blur(2px);
 }
-.sent-file-card .sfc-icon{font-size:28px;flex-shrink:0}
-.sent-file-card .sfc-info{flex:1;min-width:0}
-.sent-file-card .sfc-name{
-  font-size:13px;color:var(--text-bright);overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;
+.file-panel-overlay.open{display:flex;justify-content:flex-end}
+.file-panel{
+  width:var(--panel-w);max-width:95vw;height:100%;
+  background:var(--surface);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;animation:slideIn .2s ease;
 }
-.sent-file-card .sfc-size{font-size:11px;color:var(--text-dim)}
-.sent-file-card .sfc-dl{
-  display:inline-flex;align-items:center;gap:4px;padding:4px 12px;
-  background:var(--accent);color:#fff;border-radius:var(--radius-sm);
-  font-size:12px;text-decoration:none;flex-shrink:0;transition:background .15s;
+.file-panel-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);
 }
-.sent-file-card .sfc-dl:hover{background:var(--accent-hover)}
-.sent-file-card img.sfc-thumb{
-  width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;
+.file-panel-header h2{font-size:16px;font-weight:600;color:var(--text-bright)}
+.file-panel-close{
+  background:none;border:none;color:var(--text-dim);font-size:22px;
+  cursor:pointer;padding:0 2px;line-height:1;
+}
+.file-panel-close:hover{color:var(--text)}
+.file-panel-list{flex:1;overflow-y:auto;padding:8px}
+.file-panel-item{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;
+  border-radius:var(--radius-sm);cursor:pointer;transition:var(--transition);
+  text-decoration:none;color:inherit;
+}
+.file-panel-item:hover{background:var(--surface2)}
+.file-panel-item .fp-icon{font-size:18px;flex-shrink:0}
+.file-panel-item .fp-info{flex:1;min-width:0}
+.file-panel-item .fp-name{font-size:12px;color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-panel-item .fp-meta{font-size:10px;color:var(--text-dim)}
+.file-panel-item .fp-dl{color:var(--accent);font-size:14px;flex-shrink:0;opacity:.5;transition:opacity .15s}
+.file-panel-item:hover .fp-dl{opacity:1}
+.file-panel-empty{padding:40px 20px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.6}
+
+/* === RESPONSIVE === */
+@media(max-width:768px){
+  .sidebar{position:fixed;left:-280px;top:0;height:100%;z-index:30;transition:var(--transition)}
+  .sidebar.open{left:0}
+  .sidebar-backdrop{
+    position:fixed;top:0;left:0;width:100%;height:100%;
+    background:rgba(0,0,0,.5);z-index:25;display:none;
+  }
+  .sidebar-backdrop.open{display:block}
+  .message{max-width:95%;padding:0 12px}
+  .input-area{padding:10px 12px 14px}
+  .topbar{padding:8px 12px}
+  .status-bar{padding:4px 12px}
 }
 </style>
 </head>
 <body>
 <div class="app">
-  <!-- Header -->
-  <div class="header">
-    <h1>&#x2728; <span>Phoenix</span> Agent</h1>
-    <div class="header-actions">
-      <button class="btn" onclick="openFilePanel()" title="File manager">&#x1f4c1; Files</button>
-      <button class="btn" onclick="loadHistory()" title="Load history">&#x1f504;</button>
-      <button class="btn btn-danger" onclick="newSession()" title="New session">&#x2795; New</button>
+  <!-- Sidebar backdrop (mobile) -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">P</div>
+      <div class="sidebar-brand">Phoenix Agent<small>Multi-Channel AI</small></div>
+    </div>
+    <button class="new-chat-btn" onclick="newSession()">
+      <span>+ New Chat</span>
+    </button>
+    <div class="session-list" id="sessionList"></div>
+    <div class="sidebar-footer">
+      <button class="sidebar-menu-btn" onclick="openSettings()">&#9881; Settings</button>
+      <button class="sidebar-menu-btn" onclick="openFilePanel()">&#128193; Files</button>
     </div>
   </div>
 
-  <!-- Messages -->
-  <div class="messages" id="messages">
-    <div class="empty-state" id="emptyState">
-      <div class="icon">&#x2728;</div>
-      <p>Send a message to start chatting with Phoenix Agent</p>
-    </div>
-  </div>
-
-  <!-- Input -->
-  <div class="input-area">
-    <div class="attachment-preview" id="attachmentPreview"></div>
-    <div class="input-wrapper">
-      <input type="file" id="fileInput" style="display:none" multiple accept=".txt,.md,.csv,.json,.yaml,.yml,.toml,.py,.js,.ts,.html,.css,.sh,.bat,.log,.sql,.conf,.cfg,.ini,.png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.zip,.tar,.gz">
-      <button class="send-btn" style="background:transparent;border:1px solid var(--border);color:var(--text-dim)" onclick="document.getElementById('fileInput').click()" title="Attach file">&#x1f4c2;</button>
-      <textarea id="userInput" rows="1" placeholder="Type your message... (drop files here)" autofocus></textarea>
-      <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send">&#x27a4;</button>
-    </div>
-  </div>
-
-  <!-- Status -->
-  <div class="status-bar">
-    <span><span class="status-dot online" id="statusDot"></span><span id="statusText">Connected</span></span>
-    <span id="modelInfo"></span>
-  </div>
-  <!-- File panel overlay -->
-  <div class="file-panel-overlay" id="filePanelOverlay" onclick="closeFilePanel()">
-    <div class="file-panel" onclick="event.stopPropagation()">
-      <div class="file-panel-header">
-        <span>&#x1f4c1; Files</span>
-        <button class="file-panel-close" onclick="closeFilePanel()">&times;</button>
+  <!-- Main chat area -->
+  <div class="chat-main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="topbar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">&#9776;</button>
+        <span class="topbar-title" id="topbarTitle">New Chat</span>
+        <span class="topbar-model" id="topbarModel"></span>
       </div>
-      <div class="file-panel-list" id="filePanelList">
-        <div class="file-panel-empty">Loading...</div>
+      <div class="topbar-right">
+        <button class="topbar-btn" onclick="loadHistory()" title="Load history">&#128260;</button>
+        <button class="topbar-btn" onclick="openSettings()" title="Settings">&#9881;</button>
       </div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">&#x2728;</div>
+        <p>Send a message to start chatting with Phoenix Agent</p>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="attachment-preview" id="attachmentPreview"></div>
+      <div class="input-wrapper">
+        <input type="file" id="fileInput" style="display:none" multiple accept=".txt,.md,.csv,.json,.yaml,.yml,.toml,.py,.js,.ts,.html,.css,.sh,.bat,.log,.sql,.conf,.cfg,.ini,.png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.zip,.tar,.gz">
+        <button class="topbar-btn" style="margin-bottom:0" onclick="document.getElementById('fileInput').click()" title="Attach file">&#128206;</button>
+        <textarea id="userInput" rows="1" placeholder="Type a message... (drop files here)" autofocus></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send">&#10148;</button>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <span><span class="status-dot online" id="statusDot"></span><span id="statusText">Ready</span></span>
+      <span id="modelInfo"></span>
     </div>
   </div>
 </div>
 
+<!-- Settings Panel -->
+<div class="panel-overlay" id="settingsOverlay" onclick="closeSettings()">
+  <div class="settings-panel" onclick="event.stopPropagation()">
+    <div class="panel-header">
+      <h2>&#9881; Settings</h2>
+      <button class="panel-close" onclick="closeSettings()">&times;</button>
+    </div>
+    <div class="panel-tabs">
+      <button class="panel-tab active" onclick="switchTab('model',this)">Model</button>
+      <button class="panel-tab" onclick="switchTab('channels',this)">Channels</button>
+      <button class="panel-tab" onclick="switchTab('skills',this)">Skills</button>
+      <button class="panel-tab" onclick="switchTab('agent',this)">Agent</button>
+    </div>
+    <div class="panel-body" id="panelBody">
+      <div id="tab-model"></div>
+      <div id="tab-channels" style="display:none"></div>
+      <div id="tab-skills" style="display:none"></div>
+      <div id="tab-agent" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- File Panel -->
+<div class="file-panel-overlay" id="filePanelOverlay" onclick="closeFilePanel()">
+  <div class="file-panel" onclick="event.stopPropagation()">
+    <div class="file-panel-header">
+      <h2>&#128193; Files</h2>
+      <button class="file-panel-close" onclick="closeFilePanel()">&times;</button>
+    </div>
+    <div class="file-panel-list" id="filePanelList"><div class="file-panel-empty">Loading...</div></div>
+  </div>
+</div>
+
 <script>
-(function() {
+(function(){
   // --- State ---
   let sessionId = sessionStorage.getItem('phoenix_session') || '';
   let isLoading = false;
-  let pendingFiles = [];  // [{file_id, filename, file_type, size, file_path, download_url}]
+  let pendingFiles = [];
+  let currentConfig = null;
   const messagesEl = document.getElementById('messages');
   const inputEl = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -365,492 +568,559 @@ a{color:var(--accent);text-decoration:none}
   const attachmentPreview = document.getElementById('attachmentPreview');
 
   // --- Helpers ---
-  function getNow() {
-    return new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+  function getNow(){
+    return new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
   }
+  function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+  function formatSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB'}
+  function formatDate(ts){const d=new Date(ts*1000);const p=n=>String(n).padStart(2,'0');return p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())}
 
-  function escHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
-  // --- File upload ---
-  function formatSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  }
-
-  function renderAttachmentPreview() {
-    if (pendingFiles.length === 0) {
-      attachmentPreview.innerHTML = '';
-      return;
-    }
-    let html = '';
-    for (let i = 0; i < pendingFiles.length; i++) {
-      const f = pendingFiles[i];
-      const thumbHtml = f.file_type === 'image'
-        ? '<img class="file-thumb" src="' + f.download_url + '" alt="">'
-        : '<span class="file-icon">\u{1f4c4}</span>';
-      html += '<div class="file-attachment">'
-        + thumbHtml
-        + '<div class="file-info"><div class="file-name">' + escHtml(f.filename) + '</div>'
-        + '<div class="file-size">' + formatSize(f.size) + '</div></div>'
-        + '<span class="file-remove" onclick="removePendingFile(' + i + ')">\u2716</span>'
-        + '</div>';
-    }
-    attachmentPreview.innerHTML = html;
-  }
-
-  window.removePendingFile = function(idx) {
-    pendingFiles.splice(idx, 1);
-    renderAttachmentPreview();
+  // --- Sidebar ---
+  window.toggleSidebar = function(){
+    const sb = document.getElementById('sidebar');
+    const bd = document.getElementById('sidebarBackdrop');
+    sb.classList.toggle('open');
+    bd.classList.toggle('open');
   };
 
-  async function uploadFile(file) {
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const headers = {};
-      const token = sessionStorage.getItem('phoenix_token');
-      if (token) headers['Authorization'] = 'Bearer ' + token;
-      const resp = await fetch('/api/upload', {method: 'POST', headers, body: formData});
-      if (!resp.ok) {
-        const err = await resp.json();
-        console.error('Upload failed:', err.error);
-        return null;
-      }
-      return await resp.json();
-    } catch(e) {
-      console.error('Upload error:', e);
-      return null;
-    }
+  // --- File upload ---
+  function renderAttachmentPreview(){
+    if(!pendingFiles.length){attachmentPreview.innerHTML='';return}
+    let h='';
+    pendingFiles.forEach((f,i)=>{
+      const thumb = f.file_type==='image'
+        ? '<img class="file-thumb" src="'+f.download_url+'">'
+        : '<span class="file-icon">&#128196;</span>';
+      h+='<div class="file-attachment">'+thumb
+        +'<div class="file-info"><div class="file-name">'+escHtml(f.filename)+'</div>'
+        +'<div class="file-size">'+formatSize(f.size)+'</div></div>'
+        +'<span class="file-remove" onclick="removePendingFile('+i+')">&#10005;</span></div>';
+    });
+    attachmentPreview.innerHTML=h;
+  }
+  window.removePendingFile=function(i){pendingFiles.splice(i,1);renderAttachmentPreview()};
+
+  async function uploadFile(file){
+    const fd=new FormData();fd.append('file',file);
+    try{
+      const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/upload',{method:'POST',headers:h,body:fd});
+      if(!r.ok){console.error('Upload failed');return null}
+      return await r.json();
+    }catch(e){console.error('Upload error',e);return null}
   }
 
-  fileInput.addEventListener('change', async function() {
-    const files = fileInput.files;
-    if (!files || files.length === 0) return;
-    for (const f of files) {
-      const result = await uploadFile(f);
-      if (result) pendingFiles.push(result);
-    }
-    renderAttachmentPreview();
-    fileInput.value = '';  // reset so same file can be re-selected
+  fileInput.addEventListener('change',async function(){
+    for(const f of fileInput.files){const r=await uploadFile(f);if(r)pendingFiles.push(r)}
+    renderAttachmentPreview();fileInput.value='';
   });
-
-  // Drag & drop on textarea
-  inputEl.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    inputEl.classList.add('file-drop-highlight');
-  });
-  inputEl.addEventListener('dragleave', function() {
-    inputEl.classList.remove('file-drop-highlight');
-  });
-  inputEl.addEventListener('drop', async function(e) {
-    e.preventDefault();
-    inputEl.classList.remove('file-drop-highlight');
-    const files = e.dataTransfer.files;
-    if (!files || files.length === 0) return;
-    for (const f of files) {
-      const result = await uploadFile(f);
-      if (result) pendingFiles.push(result);
-    }
+  inputEl.addEventListener('dragover',function(e){e.preventDefault();inputEl.classList.add('file-drop-highlight')});
+  inputEl.addEventListener('dragleave',function(){inputEl.classList.remove('file-drop-highlight')});
+  inputEl.addEventListener('drop',async function(e){
+    e.preventDefault();inputEl.classList.remove('file-drop-highlight');
+    for(const f of e.dataTransfer.files){const r=await uploadFile(f);if(r)pendingFiles.push(r)}
     renderAttachmentPreview();
   });
 
-  function simpleMarkdown(text) {
+  // --- Markdown renderer ---
+  function renderMd(text){
     // Code blocks
-    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      return '<pre><code>' + escHtml(code.trim()) + '</code></pre>';
+    text=text.replace(/```(\w*)\n([\s\S]*?)```/g,(_,lang,code)=>{
+      const id='code-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+      return '<pre><button class="copy-btn" onclick="copyCode(\''+id+'\')">Copy</button><code id="'+id+'">'+escHtml(code.trim())+'</code></pre>';
     });
-    // Inline code
-    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-    // Bold
-    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Italic
-    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    // Headers
-    text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-    text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-    text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-    // Blockquote
-    text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-    // Unordered list
-    text = text.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-    text = text.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-    // Links
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-    // Paragraphs (double newline)
-    text = text.replace(/\n\n/g, '</p><p>');
-    // Single newline
-    text = text.replace(/\n/g, '<br>');
-    text = '<p>' + text + '</p>';
-    text = text.replace(/<p><\/p>/g, '');
+    text=text.replace(/`([^`]+)`/g,'<code>$1</code>');
+    text=text.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    text=text.replace(/\*(.+?)\*/g,'<em>$1</em>');
+    text=text.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+    text=text.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+    text=text.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+    text=text.replace(/^---+$/gm,'<hr>');
+    text=text.replace(/^> (.+)$/gm,'<blockquote>$1</blockquote>');
+    text=text.replace(/^[\-\*] (.+)$/gm,'<li>$1</li>');
+    text=text.replace(/(<li>.*<\/li>\n?)+/g,'<ul>$&</ul>');
+    text=text.replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
+    text=text.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+    text=text.replace(/\n\n/g,'</p><p>');
+    text=text.replace(/\n/g,'<br>');
+    text='<p>'+text+'</p>';
+    text=text.replace(/<p><\/p>/g,'');
     return text;
   }
+  window.copyCode=function(id){
+    const el=document.getElementById(id);if(!el)return;
+    navigator.clipboard.writeText(el.textContent).then(()=>{});
+  };
 
-  function addMessage(role, content, attachmentHtml) {
-    if (emptyState) emptyState.style.display = 'none';
-    const div = document.createElement('div');
-    div.className = 'message ' + role;
-    const avatar = role === 'user' ? 'U' : 'P';
-    let rendered = simpleMarkdown(content);
-    if (attachmentHtml) rendered += attachmentHtml;
-
-    div.innerHTML = '\
-      <div class="message-avatar">' + avatar + '</div>\
-      <div>\
-        <div class="message-bubble msg-content">' + rendered + '</div>\
-        <div class="message-time">' + getNow() + '</div>\
-      </div>\
-    ';
+  // --- Message rendering ---
+  function addMessage(role,content,attachmentHtml){
+    if(emptyState)emptyState.style.display='none';
+    const div=document.createElement('div');
+    div.className='message '+role;
+    const avatar=role==='user'?'U':'P';
+    const rendered=renderMd(content||'');
+    const extra=attachmentHtml||'';
+    div.innerHTML='<div class="message-avatar">'+avatar+'</div>'
+      +'<div class="message-body"><div class="message-bubble md">'+rendered+extra+'</div>'
+      +'<div class="message-time">'+getNow()+'</div></div>';
     messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    messagesEl.scrollTop=messagesEl.scrollHeight;
     return div;
   }
 
-  // --- File panel ---
-  function formatDate(ts) {
-    const d = new Date(ts * 1000);
-    const pad = n => String(n).padStart(2, '0');
-    return pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  function renderConfirmCard(cmd){
+    const id='cf-'+Date.now();
+    window['__cfCmd_'+id]=cmd;
+    return '<div class="confirm-card" id="'+id+'">'
+      +'<div class="confirm-label">&#9888;&#65039; Command Requires Confirmation</div>'
+      +'<div class="confirm-cmd">'+escHtml(cmd)+'</div>'
+      +'<div class="confirm-actions">'
+      +'<button class="btn-confirm" onclick="handleConfirm(\''+id+'\')">&#9654; Execute</button>'
+      +'<button class="btn-cancel-confirm" onclick="handleCancel(\''+id+'\')">Cancel</button>'
+      +'</div></div>';
   }
-
-  window.openFilePanel = async function() {
-    document.getElementById('filePanelOverlay').classList.add('open');
-    const listEl = document.getElementById('filePanelList');
-    listEl.innerHTML = '<div class="file-panel-empty">Loading...</div>';
-    try {
-      const token = sessionStorage.getItem('phoenix_token');
-      const headers = {};
-      if (token) headers['Authorization'] = 'Bearer ' + token;
-      const resp = await fetch('/api/files', {headers});
-      if (!resp.ok) {
-        listEl.innerHTML = '<div class="file-panel-empty">Failed to load files</div>';
-        return;
-      }
-      const data = await resp.json();
-      const files = data.files || [];
-      if (files.length === 0) {
-        listEl.innerHTML = '<div class="file-panel-empty">No files yet.<br>Upload files or ask the agent to send you files.</div>';
-        return;
-      }
-      let html = '';
-      for (const f of files) {
-        const icon = f.type === 'image' ? '\u{1f5bc}\ufe0f' : '\u{1f4c4}';
-        html += '<a class="file-panel-item" href="' + escHtml(f.download_url) + '" target="_blank">'
-          + '<span class="fp-icon">' + icon + '</span>'
-          + '<div class="fp-info"><div class="fp-name">' + escHtml(f.name) + '</div>'
-          + '<div class="fp-meta">' + formatSize(f.size) + ' &middot; ' + formatDate(f.modified) + '</div></div>'
-          + '<span class="fp-dl">\u2913</span>'
-          + '</a>';
-      }
-      listEl.innerHTML = html;
-    } catch(e) {
-      listEl.innerHTML = '<div class="file-panel-empty">Error loading files</div>';
-    }
+  window.handleConfirm=async function(id){
+    const card=document.getElementById(id);if(!card)return;
+    card.querySelectorAll('button').forEach(b=>{b.disabled=true;b.style.opacity='.5'});
+    const cmd=window['__cfCmd_'+id]||card.querySelector('.confirm-cmd').textContent;
+    inputEl.value='confirm: '+cmd;sendMessage();
+  };
+  window.handleCancel=function(id){
+    const card=document.getElementById(id);
+    if(card)card.innerHTML='<span style="color:var(--text-dim);font-size:12px">&#10005; Cancelled</span>';
   };
 
-  window.closeFilePanel = function() {
-    document.getElementById('filePanelOverlay').classList.remove('open');
-  };
-
-  // --- Render sent file card (from agent) ---
-  function renderSentFileCard(tr) {
-    const icon = tr.metadata.file_type === 'image'
-      ? '<img class="sfc-thumb" src="' + escHtml(tr.metadata.download_url) + '" alt="">'
-      : '<span class="sfc-icon">\u{1f4c4}</span>';
-    return '<div class="sent-file-card">'
-      + icon
-      + '<div class="sfc-info"><div class="sfc-name">' + escHtml(tr.metadata.filename) + '</div>'
-      + '<div class="sfc-size">' + formatSize(tr.metadata.size) + '</div></div>'
-      + '<a class="sfc-dl" href="' + escHtml(tr.metadata.download_url) + '" download="\u200b">\u2913 Download</a>'
-      + '</div>';
+  function renderSentFileCard(tr){
+    const icon=tr.metadata.file_type==='image'
+      ?'<img class="sfc-thumb" src="'+escHtml(tr.metadata.download_url)+'">'
+      :'<span class="sfc-icon">&#128196;</span>';
+    return '<div class="sent-file-card">'+icon
+      +'<div class="sfc-info"><div class="sfc-name">'+escHtml(tr.metadata.filename)+'</div>'
+      +'<div class="sfc-size">'+formatSize(tr.metadata.size)+'</div></div>'
+      +'<a class="sfc-dl" href="'+escHtml(tr.metadata.download_url)+'" download>&#11015; Download</a></div>';
   }
 
-  function renderConfirmCard(cmd) {
-    const id = 'confirm-' + Date.now();
-    // Store command on the card element so handleConfirm can read it
-    window['__confirmCmd_' + id] = cmd;
-    return '\
-      <div class="confirm-card" id="' + id + '">\
-        <div class="confirm-label">&#9888;&#65039; Command Requires Confirmation</div>\
-        <div class="confirm-cmd">' + escHtml(cmd) + '</div>\
-        <div class="confirm-actions">\
-          <button class="btn-confirm" onclick="handleConfirm(\'' + id + '\')">&#9654; Execute</button>\
-          <button class="btn-cancel-confirm" onclick="handleCancel(\'' + id + '\')">Cancel</button>\
-        </div>\
-      </div>\
-    ';
+  function addTyping(){
+    if(emptyState)emptyState.style.display='none';
+    const div=document.createElement('div');div.className='typing';div.id='typingIndicator';
+    div.innerHTML='<div class="typing-avatar">P</div><div class="typing-dots"><span></span><span></span><span></span></div>';
+    messagesEl.appendChild(div);messagesEl.scrollTop=messagesEl.scrollHeight;
   }
+  function removeTyping(){const el=document.getElementById('typingIndicator');if(el)el.remove()}
 
-  window.handleConfirm = async function(cardId) {
-    const card = document.getElementById(cardId);
-    if (!card) return;
-    card.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
-    const confirmMsg = window['__confirmCmd_' + cardId] || card.querySelector('.confirm-cmd').textContent;
-    inputEl.value = 'confirm: ' + confirmMsg;
-    sendMessage();
-  };
-
-  window.handleCancel = function(cardId) {
-    const card = document.getElementById(cardId);
-    if (card) {
-      card.innerHTML = '<span style="color:var(--text-dim);font-size:13px">&#x2716; Cancelled</span>';
-    }
-  };
-
-  function addTyping() {
-    if (emptyState) emptyState.style.display = 'none';
-    const div = document.createElement('div');
-    div.className = 'typing';
-    div.id = 'typingIndicator';
-    div.innerHTML = `
-      <div class="typing-avatar">P</div>
-      <div class="typing-dots"><span></span><span></span><span></span></div>
-    `;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function removeTyping() {
-    const el = document.getElementById('typingIndicator');
-    if (el) el.remove();
-  }
-
-  function setLoading(loading) {
-    isLoading = loading;
-    sendBtn.disabled = loading;
-    inputEl.disabled = loading;
-    const dot = document.getElementById('statusDot');
-    const txt = document.getElementById('statusText');
-    if (loading) {
-      dot.className = 'status-dot';
-      dot.style.background = 'var(--warning)';
-      txt.textContent = 'Thinking...';
-    } else {
-      dot.className = 'status-dot online';
-      dot.style.background = '';
-      txt.textContent = 'Connected';
-    }
+  function setLoading(on){
+    isLoading=on;sendBtn.disabled=on;inputEl.disabled=on;
+    const dot=document.getElementById('statusDot'),txt=document.getElementById('statusText');
+    if(on){dot.className='status-dot thinking';txt.textContent='Thinking...'}
+    else{dot.className='status-dot online';txt.textContent='Ready'}
   }
 
   // --- API ---
-  async function apiCall(endpoint, body) {
-    const headers = {'Content-Type': 'application/json'};
-    const token = sessionStorage.getItem('phoenix_token');
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const resp = await fetch(endpoint, {method:'POST', headers, body: JSON.stringify(body)});
-    if (resp.status === 401) throw new Error('Unauthorized');
-    return resp;
+  async function apiCall(endpoint,body){
+    const h={'Content-Type':'application/json'};
+    const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+    return fetch(endpoint,{method:'POST',headers:h,body:JSON.stringify(body)});
   }
 
-  // --- Send message (SSE streaming) ---
-  window.sendMessage = async function() {
-    const text = inputEl.value.trim();
-    if (!text && pendingFiles.length === 0) return;
-    if (isLoading) return;
+  // --- Send message ---
+  window.sendMessage=async function(){
+    const text=inputEl.value.trim();
+    if(!text&&!pendingFiles.length)return;if(isLoading)return;
 
-    // Build attachment HTML for the user message bubble
-    let attachmentHtml = '';
-    if (pendingFiles.length > 0) {
-      for (const f of pendingFiles) {
-        if (f.file_type === 'image') {
-          attachmentHtml += '<div class="msg-attachment"><a href="' + f.download_url + '" target="_blank"><img class="msg-thumb" src="' + f.download_url + '" alt="' + escHtml(f.filename) + '"></a><a href="' + f.download_url + '" target="_blank">' + escHtml(f.filename) + '</a></div>';
-        } else {
-          attachmentHtml += '<div class="msg-attachment">\u{1f4c4} <a href="' + f.download_url + '" target="_blank">' + escHtml(f.filename) + ' (' + formatSize(f.size) + ')</a></div>';
-        }
-      }
+    let attachHtml='';
+    if(pendingFiles.length){
+      pendingFiles.forEach(f=>{
+        if(f.file_type==='image')
+          attachHtml+='<div class="msg-attachment"><a href="'+f.download_url+'" target="_blank"><img class="msg-thumb" src="'+f.download_url+'"></a><a href="'+f.download_url+'" target="_blank">'+escHtml(f.filename)+'</a></div>';
+        else
+          attachHtml+='<div class="msg-attachment">&#128196; <a href="'+f.download_url+'" target="_blank">'+escHtml(f.filename)+' ('+formatSize(f.size)+')</a></div>';
+      });
     }
 
-    // Add user message with attachments
-    const displayText = text || (pendingFiles.length > 0 ? '\u{1f4c2} Sent ' + pendingFiles.length + ' file(s)' : '');
-    addMessage('user', displayText, attachmentHtml);
+    const displayText=text||(pendingFiles.length?&#128206;' Sent '+pendingFiles.length+' file(s)':'');
+    addMessage('user',displayText,attachHtml);
+    inputEl.value='';autoResize();
+    const attachments=[...pendingFiles];pendingFiles=[];renderAttachmentPreview();
+    setLoading(true);addTyping();
 
-    inputEl.value = '';
-    autoResize();
-
-    // Capture and clear pending files
-    const attachments = [...pendingFiles];
-    pendingFiles = [];
-    renderAttachmentPreview();
-
-    setLoading(true);
-    addTyping();
-
-    try {
-      const body = {message: text, session_id: sessionId};
-      if (attachments.length > 0) body.attachments = attachments;
-      const resp = await apiCall('/api/chat/stream', body);
-      if (!resp.ok) {
-        removeTyping();
-        const err = await resp.text();
-        addMessage('assistant', '⚠️ Error: ' + err);
-        setLoading(false);
-        return;
-      }
+    try{
+      const body={message:text,session_id:sessionId};
+      if(attachments.length)body.attachments=attachments;
+      const resp=await apiCall('/api/chat/stream',body);
+      if(!resp.ok){removeTyping();const err=await resp.text();addMessage('assistant','Error: '+err);setLoading(false);return}
 
       removeTyping();
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = '';
-      let confirmCardShown = false;  // track if a confirmation card is active
-      let bubble = addMessage('assistant', '');
-      const bubbleContent = bubble.querySelector('.msg-content');
+      const reader=resp.body.getReader();const dec=new TextDecoder();
+      let full='',confirmShown=false;
+      let bubble=addMessage('assistant','');
+      const bContent=bubble.querySelector('.md');
 
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, {stream: true});
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') break;
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.tool_result) {
-              const tr = parsed.tool_result;
-              if (tr.metadata && tr.metadata.needs_confirmation && tr.metadata.command) {
-                let html = fullContent ? simpleMarkdown(fullContent) : '';
-                html += renderConfirmCard(tr.metadata.command);
-                bubbleContent.innerHTML = html;
-                confirmCardShown = true;
-              } else if (tr.metadata && tr.metadata.send_file) {
-                // Agent sent a file — render as download card
-                let html = fullContent ? simpleMarkdown(fullContent) : '';
-                html += renderSentFileCard(tr);
-                bubbleContent.innerHTML = html;
-                fullContent += '\n\n[File: ' + (tr.metadata.filename || 'file') + ']';
-              } else {
-                const info = tr.success
-                  ? '\u2705 ' + (tr.tool_name || 'tool') + ' executed'
-                  : '\u26a0\ufe0f ' + (tr.error || (tr.tool_name || 'tool') + ' failed');
-                fullContent += '\n\n' + info;
-                if (confirmCardShown) {
-                  const card = bubbleContent.querySelector('.confirm-card');
-                  const cardHtml = card ? card.outerHTML : '';
-                  bubbleContent.innerHTML = simpleMarkdown(fullContent) + cardHtml;
-                } else {
-                  bubbleContent.innerHTML = simpleMarkdown(fullContent);
-                }
+      while(true){
+        const{done,value}=await reader.read();if(done)break;
+        const chunk=dec.decode(value,{stream:true});
+        for(const line of chunk.split('\n')){
+          if(!line.startsWith('data: '))continue;
+          const data=line.slice(6);if(data==='[DONE]')break;
+          try{
+            const p=JSON.parse(data);
+            if(p.tool_result){
+              const tr=p.tool_result;
+              if(tr.metadata&&tr.metadata.needs_confirmation&&tr.metadata.command){
+                bContent.innerHTML=(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
+                confirmShown=true;
+              }else if(tr.metadata&&tr.metadata.send_file){
+                bContent.innerHTML=(full?renderMd(full):'')+renderSentFileCard(tr);
+                full+='\n\n[File: '+(tr.metadata.filename||'file')+']';
+              }else{
+                const info=tr.success?'\u2705 '+(tr.tool_name||'tool')+' executed':'\u26a0\ufe0f '+(tr.error||(tr.tool_name||'tool')+' failed'));
+                full+='\n\n'+info;
+                if(confirmShown){
+                  const card=bContent.querySelector('.confirm-card');
+                  bContent.innerHTML=renderMd(full)+(card?card.outerHTML:'');
+                }else{bContent.innerHTML=renderMd(full)}
               }
-              messagesEl.scrollTop = messagesEl.scrollHeight;
-            } else if (parsed.error) {
-              if (confirmCardShown) {
-                const card = bubbleContent.querySelector('.confirm-card');
-                const cardHtml = card ? card.outerHTML : '';
-                bubbleContent.innerHTML = simpleMarkdown('\u26a0\ufe0f ' + parsed.error) + cardHtml;
-              } else {
-                bubbleContent.innerHTML = simpleMarkdown('\u26a0\ufe0f ' + parsed.error);
-              }
-              messagesEl.scrollTop = messagesEl.scrollHeight;
-            } else if (parsed.content) {
-              fullContent += parsed.content;
-              if (confirmCardShown) {
-                const card = bubbleContent.querySelector('.confirm-card');
-                const cardHtml = card ? card.outerHTML : '';
-                bubbleContent.innerHTML = simpleMarkdown(fullContent) + cardHtml;
-              } else {
-                bubbleContent.innerHTML = simpleMarkdown(fullContent);
-              }
-              messagesEl.scrollTop = messagesEl.scrollHeight;
+              messagesEl.scrollTop=messagesEl.scrollHeight;
+            }else if(p.error){
+              const card=bContent.querySelector('.confirm-card');
+              bContent.innerHTML=renderMd('\u26a0\ufe0f '+p.error)+(card?card.outerHTML:'');
+              messagesEl.scrollTop=messagesEl.scrollHeight;
+            }else if(p.content){
+              full+=p.content;
+              if(confirmShown){
+                const card=bContent.querySelector('.confirm-card');
+                bContent.innerHTML=renderMd(full)+(card?card.outerHTML:'');
+              }else{bContent.innerHTML=renderMd(full)}
+              messagesEl.scrollTop=messagesEl.scrollHeight;
             }
-          } catch(e) { console.error('SSE parse error', e); }
+          }catch(e){}
         }
       }
-
-      if (!sessionId) {
-        // Session will be created server-side, we store it
-      }
-    } catch (e) {
+    }catch(e){
       removeTyping();
-      if (e.message === 'Unauthorized') {
-        addMessage('assistant', '⚠️ Unauthorized. Please provide a valid token.');
-      } else {
-        addMessage('assistant', '⚠️ Connection error. Please try again.');
-      }
+      addMessage('assistant',e.message==='Unauthorized'?'Unauthorized. Check your token.':'Connection error.');
     }
     setLoading(false);
   };
 
-  // --- New session ---
-  window.newSession = async function() {
-    if (isLoading) return;
-    messagesEl.innerHTML = '';
-    if (emptyState) {
-      messagesEl.appendChild(emptyState);
-      emptyState.style.display = '';
-    }
-    try {
-      const resp = await apiCall('/api/session/new', {session_id: sessionId});
-      const data = await resp.json();
-      sessionId = data.session_id;
-      sessionStorage.setItem('phoenix_session', sessionId);
-    } catch(e) {
-      // fallback
-      sessionId = '';
-      sessionStorage.removeItem('phoenix_session');
-    }
+  // --- Session management ---
+  window.newSession=async function(){
+    if(isLoading)return;
+    messagesEl.innerHTML='';
+    if(emptyState){messagesEl.appendChild(emptyState);emptyState.style.display=''}
+    try{
+      const resp=await apiCall('/api/session/new',{session_id:sessionId});
+      const data=await resp.json();
+      sessionId=data.session_id;sessionStorage.setItem('phoenix_session',sessionId);
+      document.getElementById('topbarTitle').textContent='New Chat';
+      addSessionToList(sessionId,'New Chat');
+    }catch(e){sessionId='';sessionStorage.removeItem('phoenix_session')}
   };
 
-  // --- Load history ---
-  window.loadHistory = async function() {
-    if (isLoading || !sessionId) return;
-    try {
-      const token = sessionStorage.getItem('phoenix_token');
-      const headers = {};
-      if (token) headers['Authorization'] = 'Bearer ' + token;
-      const resp = await fetch('/api/history?session_id=' + encodeURIComponent(sessionId), {headers});
-      if (!resp.ok) return;
-      const data = await resp.json();
-      if (!data.history || data.history.length === 0) return;
-      messagesEl.innerHTML = '';
-      if (emptyState) {
-        messagesEl.appendChild(emptyState);
-        emptyState.style.display = 'none';
-      }
-      for (const msg of data.history) {
-        if (msg.role === 'user' || msg.role === 'assistant') {
-          addMessage(msg.role, msg.content);
-        }
-      }
-    } catch(e) {}
+  window.loadHistory=async function(){
+    if(isLoading||!sessionId)return;
+    try{
+      const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/history?session_id='+encodeURIComponent(sessionId),{headers:h});
+      if(!r.ok)return;const data=await r.json();
+      if(!data.history||!data.history.length)return;
+      messagesEl.innerHTML='';
+      if(emptyState){messagesEl.appendChild(emptyState);emptyState.style.display='none'}
+      data.history.forEach(m=>{if(m.role==='user'||m.role==='assistant')addMessage(m.role,m.content)});
+    }catch(e){}
   };
+
+  function addSessionToList(id,title){
+    const list=document.getElementById('sessionList');
+    // Remove existing active
+    list.querySelectorAll('.session-item').forEach(el=>el.classList.remove('active'));
+    // Add new
+    const div=document.createElement('div');
+    div.className='session-item active';
+    div.innerHTML='<span class="si-icon">&#128172;</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(title||id)+'</span>';
+    div.dataset.sid=id;
+    list.prepend(div);
+  }
+
+  // --- Settings Panel ---
+  window.openSettings=function(){
+    document.getElementById('settingsOverlay').classList.add('open');
+    loadConfig();
+  };
+  window.closeSettings=function(){
+    document.getElementById('settingsOverlay').classList.remove('open');
+  };
+  window.switchTab=function(tab,btn){
+    document.querySelectorAll('.panel-tab').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active');
+    ['model','channels','skills','agent'].forEach(t=>{
+      const el=document.getElementById('tab-'+t);
+      if(el)el.style.display=t===tab?'':'none';
+    });
+    if(tab==='skills')loadSkills();
+  };
+
+  async function loadConfig(){
+    try{
+      const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/config',{headers:h});
+      if(!r.ok)return;
+      currentConfig=await r.json();
+      renderModelTab();renderChannelsTab();renderAgentTab();
+      // Model badge in topbar
+      const model=currentConfig.provider?.model||'';
+      document.getElementById('topbarModel').textContent=model;
+    }catch(e){}
+  }
+
+  function renderModelTab(){
+    const p=currentConfig?.provider||{};
+    const ws=currentConfig?.web_search||{};
+    document.getElementById('tab-model').innerHTML=
+      '<div style="margin-bottom:20px">'
+      +'<h3 style="font-size:14px;color:var(--text-bright);margin-bottom:12px">LLM Provider</h3>'
+      +'<div class="form-row"><div class="form-group"><label class="form-label">Type</label>'
+      +'<select class="form-input" id="cfgProviderType">'
+      +'<option value="openai"'+(p.type==='openai'?' selected':'')+'>OpenAI</option>'
+      +'<option value="anthropic"'+(p.type==='anthropic'?' selected':'')+'>Anthropic</option>'
+      +'<option value="openai-compatible"'+(p.type==='openai-compatible'?' selected':'')+'>OpenAI-Compatible</option>'
+      +'</select></div>'
+      +'<div class="form-group"><label class="form-label">Model</label>'
+      +'<input class="form-input" id="cfgModel" value="'+escHtml(p.model||'')+'" placeholder="gpt-4o / qwen3.5-35b"></div></div>'
+      +'<div class="form-group"><label class="form-label">API Key</label>'
+      +'<input class="form-input" id="cfgApiKey" type="password" value="'+escHtml(p.api_key||'')+'" placeholder="sk-..."></div>'
+      +'<div class="form-group"><label class="form-label">Base URL</label>'
+      +'<input class="form-input" id="cfgBaseUrl" value="'+escHtml(p.base_url||'')+'" placeholder="https://api.openai.com/v1"></div>'
+      +'<div class="form-row"><div class="form-group"><label class="form-label">Max Tokens</label>'
+      +'<input class="form-input" id="cfgMaxTokens" type="number" value="'+(p.max_tokens||8192)+'"></div>'
+      +'<div class="form-group"><label class="form-label">Timeout (s)</label>'
+      +'<input class="form-input" id="cfgTimeout" type="number" value="'+(p.timeout||120)+'"></div></div>'
+      +'<button class="btn-save" onclick="saveProviderConfig()">Save Provider Config</button>'
+      +'</div>'
+      +'<div>'
+      +'<h3 style="font-size:14px;color:var(--text-bright);margin-bottom:12px">Web Search</h3>'
+      +'<div class="form-group"><label class="form-label">Provider</label>'
+      +'<select class="form-input" id="cfgWsProvider">'
+      +'<option value="tavily"'+(ws.provider==='tavily'?' selected':'')+'>Tavily</option>'
+      +'<option value="duckduckgo"'+(ws.provider==='duckduckgo'?' selected':'')+'>DuckDuckGo</option>'
+      +'<option value="custom"'+(ws.provider==='custom'?' selected':'')+'>Custom</option>'
+      +'</select></div>'
+      +'<div class="form-row"><div class="form-group"><label class="form-label">API Key</label>'
+      +'<input class="form-input" id="cfgWsApiKey" type="password" value="'+escHtml(ws.api_key||'')+'"></div>'
+      +'<div class="form-group"><label class="form-label">Max Results</label>'
+      +'<input class="form-input" id="cfgWsMaxResults" type="number" value="'+(ws.max_results||5)+'"></div></div>'
+      +'<button class="btn-save" onclick="saveWebSearchConfig()">Save Web Search Config</button>'
+      +'</div>';
+  }
+
+  function renderChannelsTab(){
+    const ch=currentConfig?.channels?.channels||{};
+    const server=currentConfig?.channels||{};
+    let html='<div style="margin-bottom:16px">'
+      +'<div class="form-row"><div class="form-group"><label class="form-label">Host</label>'
+      +'<input class="form-input" id="cfgHost" value="'+escHtml(server.host||'0.0.0.0')+'"></div>'
+      +'<div class="form-group"><label class="form-label">Port</label>'
+      +'<input class="form-input" id="cfgPort" type="number" value="'+(server.port||8080)+'"></div></div>'
+      +'<button class="btn-save" onclick="saveServerConfig()">Save Server Config</button></div>';
+
+    const channelNames={dingtalk:'DingTalk \u9489\u9489',wechat:'WeChat \u5fae\u4fe1',qq:'QQ',telegram:'Telegram'};
+    for(const[name,info]of Object.entries(ch)){
+      const label=channelNames[name]||name;
+      const enabled=info.enabled;
+      const s=info.settings||{};
+      html+='<div class="channel-card"><div class="channel-card-header">'
+        +'<div class="channel-card-name"><span class="ch-dot'+(enabled?' on':'')+'"></span>'+escHtml(label)+'</div>'
+        +'<label class="form-switch"><input type="checkbox" id="ch_'+name+'_enabled"'+(enabled?' checked':'')+'><span>Enabled</span></label>'
+        +'</div><div class="channel-card-fields">';
+      // Channel-specific fields
+      if(name==='dingtalk'){
+        html+=fieldHtml('ch_dingtalk_mode','Mode','text',s.mode||'stream')
+          +fieldHtml('ch_dingtalk_client_id','Client ID','text',s.client_id||'')
+          +fieldHtml('ch_dingtalk_client_secret','Client Secret','password',s.client_secret||'');
+      }else if(name==='qq'){
+        html+=fieldHtml('ch_qq_api_url','API URL','text',s.api_url||'')
+          +fieldHtml('ch_qk_access_token','Access Token','text',s.access_token||'');
+      }else if(name==='telegram'){
+        html+=fieldHtml('ch_telegram_bot_token','Bot Token','password',s.bot_token||'')
+          +fieldHtml('ch_telegram_mode','Mode','text',s.mode||'webhook');
+      }else if(name==='wechat'){
+        html+=fieldHtml('ch_wechat_mode','Mode','text',s.mode||'wecom_webhook')
+          +fieldHtml('ch_wechat_webhook_url','Webhook URL','text',s.webhook_url||'');
+      }
+      html+='<button class="btn-save" style="margin-top:8px" onclick="saveChannelConfig(\''+name+'\')">Save '+escHtml(label)+'</button>';
+      html+='</div></div>';
+    }
+    document.getElementById('tab-channels').innerHTML=html;
+  }
+
+  function fieldHtml(id,label,type,value){
+    return '<div class="form-group"><label class="form-label">'+escHtml(label)+'</label>'
+      +'<input class="form-input" id="'+id+'" type="'+type+'" value="'+escHtml(value)+'"></div>';
+  }
+
+  function renderAgentTab(){
+    const a=currentConfig?.agent||{};
+    document.getElementById('tab-agent').innerHTML=
+      '<div class="form-row"><div class="form-group"><label class="form-label">Temperature</label>'
+      +'<input class="form-input" id="cfgTemp" type="number" step="0.1" min="0" max="2" value="'+(a.temperature||0.7)+'"></div>'
+      +'<div class="form-group"><label class="form-label">Max Iterations</label>'
+      +'<input class="form-input" id="cfgIter" type="number" value="'+(a.max_iterations||50)+'"></div></div>'
+      +'<div class="form-row"><div class="form-group"><label class="form-label">Max Retry</label>'
+      +'<input class="form-input" id="cfgRetry" type="number" value="'+(a.max_retry||3)+'"></div>'
+      +'<div class="form-group"><label class="form-label">Max History Messages</label>'
+      +'<input class="form-input" id="cfgHistMsg" type="number" value="'+(a.max_history_messages||'')+'" placeholder="None"></div></div>'
+      +'<div class="form-row"><div class="form-group"><label class="form-label">Max Context Tokens</label>'
+      +'<input class="form-input" id="cfgCtxTok" type="number" value="'+(a.max_context_tokens||'')+'" placeholder="None"></div>'
+      +'<div class="form-group"><label class="form-label">Max Memory Tokens</label>'
+      +'<input class="form-input" id="cfgMemTok" type="number" value="'+(a.max_memory_tokens||2000)+'"></div></div>'
+      +'<div class="form-group"><label class="form-label">System Prompt</label>'
+      +'<textarea class="form-input" id="cfgPrompt" rows="6" placeholder="Custom system prompt...">'+escHtml(a.system_prompt||'')+'</textarea>'
+      +'<div class="form-hint">Leave empty to use default. Env PHOENIX_SYSTEM_PROMPT takes precedence.</div></div>'
+      +'<div style="display:flex;gap:12px;margin-top:8px">'
+      +'<label class="form-switch"><input type="checkbox" id="cfgStream"'+(a.stream!==false?' checked':'')+'><span>Stream</span></label>'
+      +'<label class="form-switch"><input type="checkbox" id="cfgMemory"'+(a.memory_enabled!==false?' checked':'')+'><span>Memory</span></label>'
+      +'<label class="form-switch"><input type="checkbox" id="cfgThinking"'+(a.show_thinking?' checked':'')+'><span>Show Thinking</span></label>'
+      +'</div>'
+      +'<button class="btn-save" onclick="saveAgentConfig()">Save Agent Config</button>';
+  }
+
+  async function loadSkills(){
+    try{
+      const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/skills',{headers:h});
+      if(!r.ok){document.getElementById('tab-skills').innerHTML='<p style="color:var(--text-dim)">Failed to load skills.</p>';return}
+      const data=await r.json();
+      const skills=data.skills||[];
+      if(!skills.length){
+        document.getElementById('tab-skills').innerHTML='<div class="file-panel-empty">No skills discovered.<br>Skills are auto-loaded from:<br>~/.phoenix/skills/ and ./skills/</div>';
+        return;
+      }
+      let html='<p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">'+skills.length+' skill(s) discovered</p>';
+      skills.forEach(s=>{
+        html+='<div class="skill-card"><div class="skill-card-header">'
+          +'<span class="skill-card-name">'+escHtml(s.name)+'</span>'
+          +'<span class="skill-card-ver">v'+escHtml(s.version)+'</span></div>'
+          +'<div class="skill-card-desc">'+escHtml(s.description||'No description')+'</div>'
+          +(s.triggers&&s.triggers.length?'<div class="skill-card-triggers">'
+          +s.triggers.map(t=>'<span class="skill-tag">'+escHtml(t)+'</span>').join('')+'</div>':'')
+          +'</div>';
+      });
+      document.getElementById('tab-skills').innerHTML=html;
+    }catch(e){
+      document.getElementById('tab-skills').innerHTML='<p style="color:var(--text-dim)">Error loading skills.</p>';
+    }
+  }
+
+  // --- Save config functions ---
+  window.saveProviderConfig=async function(){
+    const data={
+      type:document.getElementById('cfgProviderType').value,
+      model:document.getElementById('cfgModel').value,
+      api_key:document.getElementById('cfgApiKey').value,
+      base_url:document.getElementById('cfgBaseUrl').value||null,
+      max_tokens:parseInt(document.getElementById('cfgMaxTokens').value)||8192,
+      timeout:parseInt(document.getElementById('cfgTimeout').value)||120,
+    };
+    await saveConfigSection('provider',data);
+  };
+  window.saveWebSearchConfig=async function(){
+    const data={
+      provider:document.getElementById('cfgWsProvider').value,
+      api_key:document.getElementById('cfgWsApiKey').value||null,
+      max_results:parseInt(document.getElementById('cfgWsMaxResults').value)||5,
+    };
+    await saveConfigSection('web_search',data);
+  };
+  window.saveAgentConfig=async function(){
+    const data={
+      temperature:parseFloat(document.getElementById('cfgTemp').value)||0.7,
+      max_iterations:parseInt(document.getElementById('cfgIter').value)||50,
+      max_retry:parseInt(document.getElementById('cfgRetry').value)||3,
+      max_history_messages:document.getElementById('cfgHistMsg').value?parseInt(document.getElementById('cfgHistMsg').value):null,
+      max_context_tokens:document.getElementById('cfgCtxTok').value?parseInt(document.getElementById('cfgCtxTok').value):null,
+      max_memory_tokens:parseInt(document.getElementById('cfgMemTok').value)||2000,
+      system_prompt:document.getElementById('cfgPrompt').value||null,
+      stream:document.getElementById('cfgStream').checked,
+      memory_enabled:document.getElementById('cfgMemory').checked,
+      show_thinking:document.getElementById('cfgThinking').checked,
+    };
+    await saveConfigSection('agent',data);
+  };
+  window.saveServerConfig=async function(){
+    const raw=currentConfig?.raw_config?.channels||{};
+    raw.server={host:document.getElementById('cfgHost').value,port:parseInt(document.getElementById('cfgPort').value)||8080};
+    await saveConfigSection('channels',raw);
+  };
+  window.saveChannelConfig=async function(name){
+    const raw=currentConfig?.raw_config?.channels||{};
+    const ch=raw[name]||{};
+    ch.enabled=document.getElementById('ch_'+name+'_enabled').checked;
+    // Read channel-specific fields
+    const inputs=document.querySelectorAll('[id^="ch_'+name+'_"]');
+    inputs.forEach(inp=>{
+      const key=inp.id.replace('ch_'+name+'_','');
+      if(key!=='enabled')ch[key]=inp.value;
+    });
+    raw[name]=ch;
+    await saveConfigSection('channels',raw);
+  };
+
+  async function saveConfigSection(section,data){
+    try{
+      const h={'Content-Type':'application/json'};
+      const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/config',{method:'PUT',headers:h,body:JSON.stringify({section,data})});
+      if(r.ok){
+        const result=await r.json();
+        alert('Config saved: '+result.section);
+        loadConfig(); // refresh
+      }else{
+        const err=await r.json();alert('Save failed: '+(err.error||'Unknown error'));
+      }
+    }catch(e){alert('Save failed: '+e.message)}
+  }
+
+  // --- File panel ---
+  window.openFilePanel=async function(){
+    document.getElementById('filePanelOverlay').classList.add('open');
+    const list=document.getElementById('filePanelList');
+    list.innerHTML='<div class="file-panel-empty">Loading...</div>';
+    try{
+      const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/files',{headers:h});if(!r.ok){list.innerHTML='<div class="file-panel-empty">Failed</div>';return}
+      const data=await r.json();const files=data.files||[];
+      if(!files.length){list.innerHTML='<div class="file-panel-empty">No files yet.</div>';return}
+      list.innerHTML=files.map(f=>{
+        const icon=f.type==='image'?'\u{1f5bc}\ufe0f':'\u{1f4c4}';
+        return '<a class="file-panel-item" href="'+escHtml(f.download_url)+'" target="_blank">'
+          +'<span class="fp-icon">'+icon+'</span>'
+          +'<div class="fp-info"><div class="fp-name">'+escHtml(f.name)+'</div>'
+          +'<div class="fp-meta">'+formatSize(f.size)+' &middot; '+formatDate(f.modified)+'</div></div>'
+          +'<span class="fp-dl">\u2913</span></a>';
+      }).join('');
+    }catch(e){list.innerHTML='<div class="file-panel-empty">Error</div>'}
+  };
+  window.closeFilePanel=function(){document.getElementById('filePanelOverlay').classList.remove('open')};
 
   // --- Auto-resize textarea ---
-  function autoResize() {
-    inputEl.style.height = 'auto';
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 150) + 'px';
-  }
+  function autoResize(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,140)+'px'}
 
   // --- Keyboard ---
-  inputEl.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-  inputEl.addEventListener('input', autoResize);
+  inputEl.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
+  inputEl.addEventListener('input',autoResize);
 
-  // --- Check session ---
-  if (!sessionId) {
-    sessionId = 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    sessionStorage.setItem('phoenix_session', sessionId);
-  }
+  // --- Init ---
+  if(!sessionId){sessionId='web-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);sessionStorage.setItem('phoenix_session',sessionId)}
+  addSessionToList(sessionId,'New Chat');
 
-  // --- Fetch model info ---
-  (async function() {
-    try {
-      const resp = await fetch('/health');
-      const data = await resp.json();
-      if (data.service === 'phoenix-agent') {
-        document.getElementById('statusDot').className = 'status-dot online';
-      }
-    } catch(e) {
-      document.getElementById('statusDot').className = 'status-dot offline';
-      document.getElementById('statusText').textContent = 'Disconnected';
+  (async function(){
+    try{
+      const r=await fetch('/health');const d=await r.json();
+      if(d.service==='phoenix-agent')document.getElementById('statusDot').className='status-dot online';
+      if(d.model)document.getElementById('topbarModel').textContent=d.model;
+      if(d.version)document.querySelector('.sidebar-brand small').textContent='v'+d.version;
+    }catch(e){
+      document.getElementById('statusDot').className='status-dot offline';
+      document.getElementById('statusText').textContent='Disconnected';
     }
   })();
 })();
