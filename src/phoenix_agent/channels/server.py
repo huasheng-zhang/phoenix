@@ -112,7 +112,7 @@ def build_app(
     config=None,
 ) -> Tuple[Any, List[Tuple[str, Any]], Any]:
     """
-    Build the Starlette ASGI app and return (app, stream_channels, pool).
+    Build the Starlette ASGI app and return (app, stream_channels, pool, starlette_app).
 
     Args:
         config: A :class:`~phoenix_agent.core.config.Config` instance.
@@ -225,6 +225,8 @@ def build_app(
     app = Starlette(routes=http_routes)
 
     # --- Rate-limiting middleware for webhook endpoints ---
+    _starlette_app = app  # keep reference for event handlers
+
     async def _rate_limit_middleware(scope, receive, send):
         if scope["type"] == "http":
             # Skip rate limiting for health check and web UI
@@ -262,7 +264,7 @@ def build_app(
 
     app = _rate_limit_middleware  # wrap the ASGI app
 
-    return app, stream_channels, pool
+    return app, stream_channels, pool, _starlette_app
 
 
 async def _start_stream_channels(
@@ -344,7 +346,7 @@ def run_server(
     host = env_host or cfg.channels.host or host
     port = int(env_port or cfg.channels.port or port)
 
-    app, stream_channels, pool = build_app(cfg)
+    app, stream_channels, pool, _starlette_app = build_app(cfg)
 
     # Collect stream tasks so they can be cancelled on shutdown
     stream_tasks: List[asyncio.Task] = []
@@ -371,7 +373,7 @@ def run_server(
             except Exception as exc:
                 logger.warning("Error stopping scheduler: %s", exc)
 
-    app.add_event_handler("startup", _on_startup)
+    _starlette_app.add_event_handler("startup", _on_startup)
 
     logger.info("Starting Phoenix channel server on %s:%d", host, port)
 
