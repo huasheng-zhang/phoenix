@@ -38,6 +38,7 @@ from starlette.responses import (
     JSONResponse,
     PlainTextResponse,
     Response,
+    StreamingResponse,
 )
 from starlette.routing import Mount, Route
 
@@ -214,8 +215,8 @@ def build_web_routes(pool, config=None) -> list:
                 yield f"data: {json.dumps({'error': 'Internal error'})}\n\n"
                 yield "data: [DONE]\n\n"
 
-        return Response(
-            content=_event_stream(),
+        return StreamingResponse(
+            _event_stream(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
