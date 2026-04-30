@@ -121,6 +121,21 @@ channels:
     port: 8080
 
   # --------------------------------------------------------------------------
+  # Web UI (built-in chat interface)
+  # --------------------------------------------------------------------------
+  # The Web UI is always available at http://<host>:<port>/ when the server
+  # is running.  No separate channel enable is required.
+  #
+  # To protect the Web UI with a Bearer token (recommended for remote access):
+  #   web:
+  #     token: "your-secret-token-here"
+  #
+  # Then access the UI and enter the token when prompted.
+  # --------------------------------------------------------------------------
+  # web:
+  #   token: ""  # Optional: Bearer token for Web UI authentication
+
+  # --------------------------------------------------------------------------
   # DingTalk (钉钉) — 推荐使用 stream 模式（长连接，不需要公网地址）
   # --------------------------------------------------------------------------
   # Three modes:

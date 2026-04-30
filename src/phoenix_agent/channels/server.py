@@ -16,19 +16,20 @@ Architecture
     │  uvicorn (async HTTP server)                        │
     │                                                      │
     │  Starlette (ASGI router)                             │
-    │   ├─ /health                → health check           │
-    │   ├─ /dingtalk/webhook      → DingTalkChannel        │
-    │   ├─ /wechat/webhook        → WeChatChannel          │
-    │   ├─ /qq/webhook            → QQChannel              │
-    │   └─ /telegram/webhook      → TelegramChannel        │
+    │   ├─ /                     → Web UI (chat SPA)       │
+    │   ├─ /health               → health check            │
+    │   ├─ /dingtalk/webhook     → DingTalkChannel         │
+    │   ├─ /wechat/webhook       → WeChatChannel           │
+    │   ├─ /qq/webhook           → QQChannel               │
+    │   └─ /telegram/webhook     → TelegramChannel         │
     │                                                      │
     │  Stream channels (long connection)                     │
     │   └─ DingTalkStreamClient  → Phoenix Agent           │
     │                                                      │
     │  AgentPool — one Agent per (channel, chat_id)        │
-    │   ├─ dingtalk/group:cid-123  → Agent A              │
-    │   ├─ dingtalk/user:uid-456   → Agent B              │
-    │   ├─ telegram/chat:789        → Agent C              │
+    │   ├─ web/session-abc123   → Agent A                  │
+    │   ├─ dingtalk/group:cid-123  → Agent B              │
+    │   ├─ telegram/chat:789      → Agent C              │
     │   └─ ...                                                │
     └──────────────────────────────────────────────────────┘
 
@@ -196,26 +197,40 @@ def build_app(
             logger.info("Mounted channel %r at %s", ch_name, ch_cfg.webhook_path)
 
     # --- At least one type of channel must be present ---
+    # NOTE: The Web UI is always mounted (see below), so we always have
+    # at least one route.  We only raise if no *messaging* channels are
+    # configured and the user hasn't explicitly opted in to web-only mode.
     if not http_routes and not stream_channels:
-        raise RuntimeError(
-            "No channels were successfully mounted or started. "
-            "Enable at least one channel in config.yaml under the 'channels:' section."
+        logger.warning(
+            "No messaging channels configured. "
+            "The Web UI is still available at http://%s:%d/",
+            cfg.channels.host, cfg.channels.port,
         )
 
     # --- Health-check route ---
     async def _health(request: Request):
         return JSONResponse({"status": "ok", "service": "phoenix-agent"})
 
+    # --- Web UI ---
+    web_routes: List[Any] = []
+    try:
+        from phoenix_agent.web.routes import build_web_app
+        web_app = build_web_app(pool=pool, config=cfg)
+        web_routes.append(Mount("/", app=web_app, name="web_ui"))
+        logger.info("Web UI mounted at /")
+    except Exception as exc:
+        logger.warning("Failed to mount Web UI: %s", exc)
+
     http_routes.insert(0, Route("/health", endpoint=_health))
 
-    app = Starlette(routes=http_routes)
+    app = Starlette(routes=http_routes + web_routes)
 
     # --- Rate-limiting middleware for webhook endpoints ---
     async def _rate_limit_middleware(scope, receive, send):
         if scope["type"] == "http":
-            # Skip rate limiting for health check
+            # Skip rate limiting for health check and web UI
             path = scope.get("path", "")
-            if path == "/health":
+            if path == "/health" or path == "/" or path.startswith("/api/"):
                 await app(scope, receive, send)
                 return
 
