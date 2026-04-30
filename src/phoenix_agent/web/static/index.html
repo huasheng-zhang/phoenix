@@ -304,25 +304,25 @@ a{color:var(--accent);text-decoration:none}
 
   function renderConfirmCard(cmd) {
     const id = 'confirm-' + Date.now();
-    return `
-      <div class="confirm-card" id="${id}">
-        <div class="confirm-label">&#9888;&#65039; Command Requires Confirmation</div>
-        <div class="confirm-cmd">${escHtml(cmd)}</div>
-        <div class="confirm-actions">
-          <button class="btn-confirm" onclick="handleConfirm('${id}')">&#9654; Execute</button>
-          <button class="btn-cancel-confirm" onclick="handleCancel('${id}')">Cancel</button>
-        </div>
-      </div>
-    `;
+    // Store command on the card element so handleConfirm can read it
+    window['__confirmCmd_' + id] = cmd;
+    return '\
+      <div class="confirm-card" id="' + id + '">\
+        <div class="confirm-label">&#9888;&#65039; Command Requires Confirmation</div>\
+        <div class="confirm-cmd">' + escHtml(cmd) + '</div>\
+        <div class="confirm-actions">\
+          <button class="btn-confirm" onclick="handleConfirm(\'' + id + '\')">&#9654; Execute</button>\
+          <button class="btn-cancel-confirm" onclick="handleCancel(\'' + id + '\')">Cancel</button>\
+        </div>\
+      </div>\
+    ';
   }
 
   window.handleConfirm = async function(cardId) {
     const card = document.getElementById(cardId);
     if (!card) return;
-    // Disable buttons
     card.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
-    // Send confirm message — the LLM will re-invoke run_command with confirmed=True
-    const confirmMsg = card.querySelector('.confirm-cmd').textContent;
+    const confirmMsg = window['__confirmCmd_' + cardId] || card.querySelector('.confirm-cmd').textContent;
     inputEl.value = 'confirm: ' + confirmMsg;
     sendMessage();
   };
@@ -420,39 +420,47 @@ a{color:var(--accent);text-decoration:none}
           try {
             const parsed = JSON.parse(data);
             if (parsed.tool_result) {
-              // Tool execution result — check for confirmation request
               const tr = parsed.tool_result;
               if (tr.metadata && tr.metadata.needs_confirmation && tr.metadata.command) {
-                // Append LLM text above the card, then show card
                 let html = fullContent ? simpleMarkdown(fullContent) : '';
                 html += renderConfirmCard(tr.metadata.command);
                 bubbleContent.innerHTML = html;
                 confirmCardShown = true;
-                messagesEl.scrollTop = messagesEl.scrollHeight;
               } else {
-                // Other tool results: show briefly as system info
                 const info = tr.success
-                  ? '✅ ' + (tr.tool_name || 'tool') + ' executed'
-                  : '⚠️ ' + (tr.error || (tr.tool_name || 'tool') + ' failed');
+                  ? '\u2705 ' + (tr.tool_name || 'tool') + ' executed'
+                  : '\u26a0\ufe0f ' + (tr.error || (tr.tool_name || 'tool') + ' failed');
                 fullContent += '\n\n' + info;
-                bubbleContent.innerHTML = simpleMarkdown(fullContent);
+                if (confirmCardShown) {
+                  const card = bubbleContent.querySelector('.confirm-card');
+                  const cardHtml = card ? card.outerHTML : '';
+                  bubbleContent.innerHTML = simpleMarkdown(fullContent) + cardHtml;
+                } else {
+                  bubbleContent.innerHTML = simpleMarkdown(fullContent);
+                }
               }
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-              }
+              messagesEl.scrollTop = messagesEl.scrollHeight;
             } else if (parsed.error) {
-              bubbleContent.innerHTML = simpleMarkdown('⚠️ ' + parsed.error);
+              if (confirmCardShown) {
+                const card = bubbleContent.querySelector('.confirm-card');
+                const cardHtml = card ? card.outerHTML : '';
+                bubbleContent.innerHTML = simpleMarkdown('\u26a0\ufe0f ' + parsed.error) + cardHtml;
+              } else {
+                bubbleContent.innerHTML = simpleMarkdown('\u26a0\ufe0f ' + parsed.error);
+              }
+              messagesEl.scrollTop = messagesEl.scrollHeight;
             } else if (parsed.content) {
               fullContent += parsed.content;
               if (confirmCardShown) {
-                // Append new text ABOVE the existing confirm card
-                const cardHtml = bubbleContent.querySelector('.confirm-card')?.outerHTML || '';
+                const card = bubbleContent.querySelector('.confirm-card');
+                const cardHtml = card ? card.outerHTML : '';
                 bubbleContent.innerHTML = simpleMarkdown(fullContent) + cardHtml;
               } else {
                 bubbleContent.innerHTML = simpleMarkdown(fullContent);
               }
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
-          } catch(e) {}
+          } catch(e) { console.error('SSE parse error', e); }
         }
       }
 
