@@ -45,6 +45,7 @@ def load_builtin_tools(registry: ToolRegistry) -> None:
     _register_web_tools(registry)
     _register_system_tools(registry)
     _register_utility_tools(registry)
+    _register_file_sharing_tools(registry)
     _register_scheduler_tools(registry)
 
 
@@ -1450,6 +1451,72 @@ def remove_scheduled_task(name: str) -> str:
     except Exception as exc:
         return ToolResult(success=False, content="",
                           error=f"Failed to remove task: {exc}").to_json()
+
+
+def _get_web_upload_dir() -> Path:
+    """Return the web uploads directory, creating it if needed."""
+    upload_dir = Path(os.getcwd()) / "uploads"
+    upload_dir.mkdir(exist_ok=True)
+    return upload_dir
+
+
+def send_file(file_path: str) -> str:
+    """
+    Send a file to the user via the Web UI.
+
+    Copies the file to the web uploads directory (if not already there)
+    and signals the frontend to display a download link.
+    """
+    try:
+        src = Path(file_path).resolve()
+        if not src.exists() or not src.is_file():
+            return ToolResult(success=False, content="",
+                              error=f"File not found: {file_path}").to_json()
+
+        upload_dir = _get_web_upload_dir()
+        import uuid as _uuid
+        file_id = _uuid.uuid4().hex[:12]
+        dest_name = f"{file_id}_{src.name}"
+        dest = upload_dir / dest_name
+
+        # Copy to uploads dir
+        import shutil
+        shutil.copy2(src, dest)
+
+        size = dest.stat().st_size
+        ext = src.suffix.lower()
+        image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"}
+        file_type = "image" if ext in image_exts else "file"
+
+        return ToolResult(
+            success=True,
+            content=f"File sent: {src.name} ({size:,} bytes)",
+            metadata={
+                "send_file": True,
+                "filename": src.name,
+                "file_type": file_type,
+                "size": size,
+                "download_url": f"/api/download?file={dest_name}",
+            }
+        ).to_json()
+    except Exception as exc:
+        return ToolResult(success=False, content="",
+                          error=f"Failed to send file: {exc}").to_json()
+
+
+def _register_file_sharing_tools(registry: ToolRegistry) -> None:
+    """Register file sending tools for Web UI."""
+    _reg(registry, "send_file",
+         "Send a file to the user via the Web UI. The file will appear as a "
+         "downloadable link in the chat. Use this after creating or modifying files "
+         "that the user needs to access.",
+         {"type": "object",
+          "properties": {
+              "file_path": {"type": "string",
+                            "description": "Absolute or relative path to the file to send"},
+          },
+          "required": ["file_path"]},
+         ToolCategory.UTILITY, send_file)
 
 
 def _register_scheduler_tools(registry: ToolRegistry) -> None:
