@@ -772,7 +772,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
                 bContent.innerHTML=(full?renderMd(full):'')+renderSentFileCard(tr);
                 full+='\n\n[File: '+(tr.metadata.filename||'file')+']';
               }else{
-                const info=tr.success?'\u2705 '+(tr.tool_name||'tool')+' executed':'\u26a0\ufe0f '+(tr.error||(tr.tool_name||'tool')+' failed'));
+                const info=tr.success?'\u2705 '+(tr.tool_name||'tool')+' executed':'\u26a0\ufe0f '+(tr.error||(tr.tool_name||'tool')+' failed');
                 full+='\n\n'+info;
                 if(confirmShown){
                   const card=bContent.querySelector('.confirm-card');
