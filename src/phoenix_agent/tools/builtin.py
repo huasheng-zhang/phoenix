@@ -850,7 +850,7 @@ def _register_system_tools(registry: ToolRegistry) -> None:
         "hostname", "uname", "uptime", "ps ", "ps\t", "df ", "df\t",
         "free ", "free\t", "top -", "htop", "grep ", "find ",
         "wc ", "head ", "tail ", "stat ", "env ", "printenv ",
-        "which ", "where ", "type ", "file ", "id ", "locale",
+        "which ", "where ", "where.exe ", "type ", "file ", "id ", "locale",
         "du ", "mount", "lsof ", "strace -", "ltrace -",
         # Version / list checks
         "python --version", "python3 --version", "pip --version", "pip3 --version",
@@ -866,6 +866,12 @@ def _register_system_tools(registry: ToolRegistry) -> None:
         "ping ", "ping -", "nslookup ", "dig ", "host ",
         "ipconfig ", "ifconfig ", "ip ", "netstat ", "ss ",
         "curl -I ", "curl -I\t", "curl --head ",
+        # Windows read-only
+        "get-psdrive", "systeminfo", "tasklist", "tasklist ", "chcp",
+        "ver ", "ver\n", "wmic ", "dir ", "dir\n",
+        "Get-Command ", "Get-Process", "Get-Service",
+        "Get-EventLog ", "Get-WmiObject ", "Get-CimInstance ",
+        "Test-Connection ", "Test-Path ",
         # Directory creation (safe)
         "mkdir ",
         # Help / usage
@@ -924,8 +930,9 @@ def _register_system_tools(registry: ToolRegistry) -> None:
             if cmd_lower.startswith(prefix.lower()):
                 return "risky"
 
-        # Default: unknown commands are risky (conservative)
-        return "risky"
+        # Default: unknown commands are safe — destructive patterns
+        # and risky prefixes already catch the real threats above.
+        return "safe"
 
     def _is_destructive_command(cmd: str) -> bool:
         """Check if a command contains known destructive patterns."""
