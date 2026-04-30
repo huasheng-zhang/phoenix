@@ -232,7 +232,7 @@ def build_app(
             # Skip rate limiting for health check and web UI
             path = scope.get("path", "")
             if path == "/health" or path == "/" or path.startswith("/api/"):
-                await app(scope, receive, send)
+                await _starlette_app(scope, receive, send)
                 return
 
             client_ip = (
@@ -260,7 +260,7 @@ def build_app(
             if hash(client_ip) % 1000 == 0:
                 _rate_limiter.cleanup()
 
-        await app(scope, receive, send)
+        await _starlette_app(scope, receive, send)
 
     app = _rate_limit_middleware  # wrap the ASGI app
 
