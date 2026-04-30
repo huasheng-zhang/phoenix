@@ -47,16 +47,16 @@ logger = logging.getLogger(__name__)
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-def build_web_app(pool, config=None) -> Starlette:
+def build_web_routes(pool, config=None) -> list:
     """
-    Build the Starlette sub-app for the Web UI.
+    Build the route list for the Web UI.
 
     Args:
         pool:   The AgentPool instance (shared with the main server).
         config: Optional Config — read ``web.token`` for auth.
 
     Returns:
-        A Starlette application.
+        A list of Starlette Route objects (not a Starlette app).
     """
     from phoenix_agent.core.config import get_config
     cfg = config or get_config()
@@ -292,4 +292,4 @@ def build_web_app(pool, config=None) -> Starlette:
         Route("/api/sessions", endpoint=_api_sessions, methods=["GET"]),
     ]
 
-    return Starlette(routes=routes)
+    return routes

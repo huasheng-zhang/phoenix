@@ -211,19 +211,18 @@ def build_app(
     async def _health(request: Request):
         return JSONResponse({"status": "ok", "service": "phoenix-agent"})
 
-    # --- Web UI ---
-    web_routes: List[Any] = []
+    http_routes.insert(0, Route("/health", endpoint=_health))
+
+    # --- Web UI (inline routes, no sub-app mount) ---
     try:
-        from phoenix_agent.web.routes import build_web_app
-        web_app = build_web_app(pool=pool, config=cfg)
-        web_routes.append(Mount("/", app=web_app, name="web_ui"))
-        logger.info("Web UI mounted at /")
+        from phoenix_agent.web.routes import build_web_routes
+        web_ui_routes = build_web_routes(pool=pool, config=cfg)
+        http_routes.extend(web_ui_routes)
+        logger.info("Web UI routes registered")
     except Exception as exc:
         logger.warning("Failed to mount Web UI: %s", exc)
 
-    http_routes.insert(0, Route("/health", endpoint=_health))
-
-    app = Starlette(routes=http_routes + web_routes)
+    app = Starlette(routes=http_routes)
 
     # --- Rate-limiting middleware for webhook endpoints ---
     async def _rate_limit_middleware(scope, receive, send):
