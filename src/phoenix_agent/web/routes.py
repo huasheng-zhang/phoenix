@@ -26,7 +26,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -121,15 +123,25 @@ def build_web_routes(pool, config=None) -> list:
 
         message = body.get("message", "").strip()
         session_id = body.get("session_id", "")
+        attachments = body.get("attachments", [])
 
-        if not message:
-            return JSONResponse({"error": "message is required"}, status_code=400)
+        if not message and not attachments:
+            return JSONResponse({"error": "message or attachments required"}, status_code=400)
 
         pool_key = _get_pool_key(session_id) or _new_session_id()
         if session_id and session_id not in _sessions:
             _sessions[session_id] = pool_key
 
         agent = pool.get_agent("web", pool_key)
+
+        if attachments:
+            file_lines = []
+            for att in attachments:
+                file_lines.append(f"[File: {att.get('filename', 'unknown')} "
+                                  f"({att.get('size', 0)} bytes) "
+                                  f"at {att.get('file_path', '')}]")
+            attachment_context = "\n".join(file_lines)
+            message = (message + "\n\n" + attachment_context) if message else attachment_context
 
         try:
             loop = asyncio.get_event_loop()
@@ -159,15 +171,26 @@ def build_web_routes(pool, config=None) -> list:
 
         message = body.get("message", "").strip()
         session_id = body.get("session_id", "")
+        attachments = body.get("attachments", [])  # [{filename, file_path, file_type, size}]
 
-        if not message:
-            return PlainTextResponse("message is required", status_code=400)
+        if not message and not attachments:
+            return PlainTextResponse("message or attachments required", status_code=400)
 
         pool_key = _get_pool_key(session_id) or _new_session_id()
         if session_id and session_id not in _sessions:
             _sessions[session_id] = pool_key
 
         agent = pool.get_agent("web", pool_key)
+
+        # Inject file info into message so LLM knows about attachments
+        if attachments:
+            file_lines = []
+            for att in attachments:
+                file_lines.append(f"[File: {att.get('filename', 'unknown')} "
+                                  f"({att.get('size', 0)} bytes) "
+                                  f"at {att.get('file_path', '')}]")
+            attachment_context = "\n".join(file_lines)
+            message = (message + "\n\n" + attachment_context) if message else attachment_context
 
         async def _event_stream():
             """Generate SSE events from the agent response."""
@@ -300,13 +323,117 @@ def build_web_routes(pool, config=None) -> list:
             "sessions": list(_sessions.keys()),
         })
 
-    routes = [
+    # --- File uploads directory ---
+    _UPLOAD_DIR = Path(os.getcwd()) / "uploads"
+    _UPLOAD_DIR.mkdir(exist_ok=True)
+
+    # Allowed file extensions for upload
+    _ALLOWED_EXTENSIONS = {
+        ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml",
+        ".py", ".js", ".ts", ".html", ".css", ".sh", ".bat", ".ps1",
+        ".log", ".sql", ".conf", ".cfg", ".ini", ".env",
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico",
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+        ".zip", ".tar", ".gz", ".7z", ".rar",
+    }
+    _MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+
+    async def _api_upload(request: Request):
+        """POST /api/upload — upload a file. Accepts multipart/form-data.
+        Returns JSON with {file_id, filename, file_type, size, file_path}."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            form = await request.form()
+        except Exception:
+            return JSONResponse({"error": "Invalid form data"}, status_code=400)
+
+        file = form.get("file")
+        if not file or not file.filename:
+            return JSONResponse({"error": "No file provided"}, status_code=400)
+
+        # Check file size
+        content = await file.read()
+        if len(content) > _MAX_UPLOAD_SIZE:
+            return JSONResponse({"error": f"File too large (max {_MAX_UPLOAD_SIZE // (1024*1024)}MB)"}, status_code=400)
+
+        # Check extension
+        ext = Path(file.filename).suffix.lower()
+        if ext not in _ALLOWED_EXTENSIONS:
+            return JSONResponse({"error": f"File type '{ext}' not allowed"}, status_code=400)
+
+        # Generate unique filename to avoid collisions
+        file_id = uuid.uuid4().hex[:12]
+        safe_name = Path(file.filename).stem[:80]  # truncate long names
+        stored_name = f"{file_id}_{safe_name}{ext}"
+        file_path = _UPLOAD_DIR / stored_name
+
+        # Write file
+        try:
+            with open(file_path, "wb") as f:
+                f.write(content)
+        except Exception as exc:
+            logger.exception("[web] Failed to save upload")
+            return JSONResponse({"error": "Failed to save file"}, status_code=500)
+
+        # Determine type
+        image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"}
+        file_type = "image" if ext in image_exts else "file"
+
+        return JSONResponse({
+            "file_id": file_id,
+            "filename": file.filename,
+            "file_type": file_type,
+            "size": len(content),
+            "file_path": str(file_path),
+            "download_url": f"/api/download?file={stored_name}",
+        })
+
+    async def _api_download(request: Request):
+        """GET /api/download?file=xxx — download a file from uploads dir."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        filename = request.query_params.get("file", "")
+        if not filename or ".." in filename or "/" in filename or "\\" in filename:
+            return JSONResponse({"error": "Invalid filename"}, status_code=400)
+
+        file_path = _UPLOAD_DIR / filename
+        if not file_path.exists() or not file_path.is_file():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+
+        return FileResponse(file_path, filename=filename)
+
+    async def _api_list_files(request: Request):
+        """GET /api/files — list uploaded files."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        files = []
+        for p in sorted(_UPLOAD_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if p.is_file() and not p.name.startswith("."):
+                ext = p.suffix.lower()
+                image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"}
+                files.append({
+                    "name": p.name,
+                    "size": p.stat().st_size,
+                    "type": "image" if ext in image_exts else "file",
+                    "download_url": f"/api/download?file={p.name}",
+                    "modified": p.stat().st_mtime,
+                })
+        return JSONResponse({"files": files[:50]})
+
+    # --- Routes ---
         Route("/", endpoint=_serve_index, methods=["GET"]),
         Route("/api/chat", endpoint=_api_chat, methods=["POST"]),
         Route("/api/chat/stream", endpoint=_api_chat_stream, methods=["POST"]),
         Route("/api/session/new", endpoint=_api_session_new, methods=["POST"]),
         Route("/api/history", endpoint=_api_history, methods=["GET"]),
         Route("/api/sessions", endpoint=_api_sessions, methods=["GET"]),
+        Route("/api/upload", endpoint=_api_upload, methods=["POST"]),
+        Route("/api/download", endpoint=_api_download, methods=["GET"]),
+        Route("/api/files", endpoint=_api_list_files, methods=["GET"]),
     ]
 
     return routes
