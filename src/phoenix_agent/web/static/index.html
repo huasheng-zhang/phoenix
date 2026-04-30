@@ -290,13 +290,6 @@ a{color:var(--accent);text-decoration:none}
     const avatar = role === 'user' ? 'U' : 'P';
     let rendered = simpleMarkdown(content);
 
-    // Detect [CONFIRM_REQUIRED] pattern and render confirmation UI
-    const confirmMatch = content.match(/\[CONFIRM_REQUIRED\]\s*This command may modify the system or files:\n\s*> (.+)\n\nTo proceed, call run_command again with confirmed=True/);
-    if (confirmMatch) {
-      const cmd = confirmMatch[1];
-      rendered = renderConfirmCard(cmd);
-    }
-
     div.innerHTML = `
       <div class="message-avatar">${avatar}</div>
       <div>
@@ -425,13 +418,23 @@ a{color:var(--accent);text-decoration:none}
           if (data === '[DONE]') break;
           try {
             const parsed = JSON.parse(data);
-            if (parsed.error) {
-              const confirmMatch = parsed.error.match(/\[CONFIRM_REQUIRED\]\s*This command may modify the system or files:\n\s*> (.+)\n\nTo proceed/);
-              if (confirmMatch) {
-                bubbleContent.innerHTML = renderConfirmCard(confirmMatch[1]);
+            if (parsed.tool_result) {
+              // Tool execution result — check for confirmation request
+              const tr = parsed.tool_result;
+              if (tr.metadata && tr.metadata.needs_confirmation && tr.metadata.command) {
+                bubbleContent.innerHTML = renderConfirmCard(tr.metadata.command);
+                messagesEl.scrollTop = messagesEl.scrollHeight;
               } else {
-                bubbleContent.innerHTML = simpleMarkdown('⚠️ ' + parsed.error);
+                // Other tool results: show briefly as system info
+                const info = tr.success
+                  ? '✅ ' + (tr.tool_name || 'tool') + ' executed'
+                  : '⚠️ ' + (tr.error || (tr.tool_name || 'tool') + ' failed');
+                fullContent += '\n\n' + info;
+                bubbleContent.innerHTML = simpleMarkdown(fullContent);
+                messagesEl.scrollTop = messagesEl.scrollHeight;
               }
+            } else if (parsed.error) {
+              bubbleContent.innerHTML = simpleMarkdown('⚠️ ' + parsed.error);
             } else if (parsed.content) {
               fullContent += parsed.content;
               bubbleContent.innerHTML = simpleMarkdown(fullContent);

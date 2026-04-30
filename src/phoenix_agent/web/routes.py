@@ -181,10 +181,23 @@ def build_web_routes(pool, config=None) -> list:
                 result_queue: queue.Queue = queue.Queue()
                 done_event = threading.Event()
 
+                def _on_tool_result(tool_name, tool_args, tool_result):
+                    """Callback: push tool results to the SSE queue so the
+                    frontend can react (e.g. show confirmation buttons)."""
+                    result_queue.put(("tool_result", {
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "success": tool_result.success,
+                        "content": tool_result.content,
+                        "error": tool_result.error,
+                        "metadata": getattr(tool_result, "metadata", None) or {},
+                    }))
+
                 def _run_agent():
                     try:
+                        agent.on_tool_call = _on_tool_result
                         response = agent.run(message)
-                        # Simulate streaming by sending the full response as one chunk
+                        # Send the final LLM text response
                         result_queue.put(("chunk", response or ""))
                     except Exception as exc:
                         result_queue.put(("error", str(exc)))
@@ -201,6 +214,9 @@ def build_web_routes(pool, config=None) -> list:
                         if msg_type == "chunk":
                             # Send as JSON in SSE data field
                             yield f"data: {json.dumps({'content': msg_data})}\n\n"
+                        elif msg_type == "tool_result":
+                            # Forward tool result to frontend (e.g. confirmation request)
+                            yield f"data: {json.dumps({'tool_result': msg_data})}\n\n"
                         elif msg_type == "error":
                             yield f"data: {json.dumps({'error': msg_data})}\n\n"
                         elif msg_type == "done":
