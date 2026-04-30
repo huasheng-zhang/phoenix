@@ -842,6 +842,91 @@ def _register_system_tools(registry: ToolRegistry) -> None:
         "wmic /node:", "sc delete",
     ]
 
+    # ---- Risk classification for run_command ----
+    # Low-risk (read-only) command prefixes — auto-execute, no confirmation needed.
+    _SAFE_PREFIXES = (
+        # Unix read-only
+        "ls ", "ls\t", "cat ", "echo ", "pwd", "date", "whoami",
+        "hostname", "uname", "uptime", "ps ", "ps\t", "df ", "df\t",
+        "free ", "free\t", "top -", "htop", "grep ", "find ",
+        "wc ", "head ", "tail ", "stat ", "env ", "printenv ",
+        "which ", "where ", "type ", "file ", "id ", "locale",
+        "du ", "mount", "lsof ", "strace -", "ltrace -",
+        # Version / list checks
+        "python --version", "python3 --version", "pip --version", "pip3 --version",
+        "node --version", "npm --version", "npx --version",
+        "git --version", "docker --version", "go version",
+        "java -version", "rustc --version", "cargo --version",
+        "pip list", "pip3 list", "pip show ",
+        "git status", "git log ", "git branch", "git remote -",
+        "git diff ", "git stash list", "git tag", "git config --get",
+        "docker ps", "docker images", "docker volume ls",
+        "npm list", "npm ls", "npm outdated", "npm audit",
+        # Network read-only
+        "ping ", "ping -", "nslookup ", "dig ", "host ",
+        "ipconfig ", "ifconfig ", "ip ", "netstat ", "ss ",
+        "curl -I ", "curl -I\t", "curl --head ",
+        # Directory creation (safe)
+        "mkdir ",
+        # Help / usage
+        "--help", "-h ", "-h\t",
+    )
+
+    # Medium-risk prefixes — need user confirmation before executing.
+    _RISKY_PREFIXES = (
+        # File manipulation
+        "cp ", "mv ", "touch ", "ln ", "chmod ", "chown ",
+        # Delete (non-destructive-pattern)
+        "rm ",
+        # Package management
+        "pip install", "pip3 install", "pip uninstall", "pip3 uninstall",
+        "npm install", "npm uninstall", "npm ci", "npm run ",
+        "apt ", "apt-get ", "yum ", "dnf ", "brew ",
+        # Git write operations
+        "git add ", "git commit", "git push", "git pull", "git checkout ",
+        "git merge ", "git rebase ", "git reset ", "git cherry-pick ",
+        "git stash ", "git tag ",
+        # Script execution
+        "python ", "python3 ", "node ", "bash ", "sh ",
+        # Docker
+        "docker run", "docker build", "docker rm ", "docker rmi ",
+        "docker-compose ", "docker compose ",
+        # Service management
+        "systemctl ", "service ", "supervisorctl ",
+        # Build tools
+        "make ", "cmake ", "cargo ", "go build", "go run",
+        # Writing
+        "tee ", "dd ",
+    )
+
+    def _classify_command(cmd: str) -> str:
+        """
+        Classify a command into risk levels: 'safe', 'risky', or 'destructive'.
+
+        Returns:
+            'safe'        — read-only / info commands, auto-execute
+            'risky'       — write / modify commands, need user confirmation
+            'destructive' — blocked entirely (matched _DESTRUCTIVE_PATTERNS)
+        """
+        cmd_stripped = cmd.strip()
+        cmd_lower = cmd_stripped.lower()
+
+        if _is_destructive_command(cmd_stripped):
+            return "destructive"
+
+        # Check safe prefixes
+        for prefix in _SAFE_PREFIXES:
+            if cmd_lower.startswith(prefix.lower()):
+                return "safe"
+
+        # Check risky prefixes
+        for prefix in _RISKY_PREFIXES:
+            if cmd_lower.startswith(prefix.lower()):
+                return "risky"
+
+        # Default: unknown commands are risky (conservative)
+        return "risky"
+
     def _is_destructive_command(cmd: str) -> bool:
         """Check if a command contains known destructive patterns."""
         cmd_lower = cmd.lower().strip()
@@ -854,26 +939,50 @@ def _register_system_tools(registry: ToolRegistry) -> None:
     def run_command(command: str,
                     working_directory: Optional[str] = None,
                     timeout: int = 60,
-                    shell: str = "auto") -> str:
+                    shell: str = "auto",
+                    confirmed: bool = False) -> str:
         """
         Execute a shell command and return stdout, stderr, and exit code.
+
+        Risk-based permission model:
+          - Low-risk (read-only) commands: auto-execute immediately.
+          - Medium-risk (write/modify) commands: return a confirmation request
+            unless called with confirmed=True. When the user approves,
+            the LLM should re-invoke this tool with confirmed=True.
+          - High-risk (destructive) commands: always blocked.
 
         Args:
             command:           The command string to run.
             working_directory: Directory to run the command in.
             timeout:           Hard timeout in seconds (max 300).
             shell:             "auto" (detect OS), "powershell", "cmd", or "bash".
+            confirmed:         Pass True to execute a previously confirmed risky command.
         """
         timeout = min(timeout, 300)  # Safety cap
 
-        # Check for destructive commands (second line of defense;
-        # ToolRegistry.execute already gates on allow_destructive)
-        if _is_destructive_command(command):
+        # Step 1: Classify risk level
+        risk = _classify_command(command)
+
+        # Step 2: Destructive → block
+        if risk == "destructive":
             return ToolResult(
                 success=False, content="",
-                error="Command blocked: detected a potentially destructive pattern. "
-                      "If this is intentional, enable allow_destructive in config.",
+                error="Command blocked: detected a potentially destructive pattern.",
             ).to_json()
+
+        # Step 3: Risky + not confirmed → ask user
+        if risk == "risky" and not confirmed:
+            return ToolResult(
+                success=False, content="",
+                error=(
+                    f"[CONFIRM_REQUIRED] This command may modify the system or files:\n"
+                    f"  > {command.strip()}\n\n"
+                    f"To proceed, call run_command again with confirmed=True."
+                ),
+                metadata={"needs_confirmation": True, "command": command.strip()},
+            ).to_json()
+
+        # Step 4: Execute (safe or confirmed-risky)
 
         # Resolve working directory
         cwd: Optional[str] = None
@@ -916,12 +1025,17 @@ def _register_system_tools(registry: ToolRegistry) -> None:
                               error=f"Error running command: {exc}").to_json()
 
     _reg(registry, "run_command",
-         "Execute a shell command and return its output (stdout, stderr, exit code). Use this to run scripts, git commands, pip installs, build tools, etc.",
+         "Execute a shell command. Low-risk commands (ls, cat, grep, git status, etc.) run "
+         "immediately. Risky commands (rm, pip install, git push, python scripts, etc.) "
+         "require user confirmation — the tool will return CONFIRM_REQUIRED, and you must "
+         "re-invoke with confirmed=True after the user approves. "
+         "Destructive commands are always blocked.",
          {"type": "object",
           "properties": {
               "command":           {"type": "string",  "description": "Command string to execute"},
               "working_directory": {"type": "string",  "description": "Directory to run in (optional)"},
               "timeout":           {"type": "integer", "description": "Timeout in seconds (default 60, max 300)"},
+              "confirmed":         {"type": "boolean", "description": "True if user has confirmed execution of a risky command"},
           },
           "required": ["command"]},
          ToolCategory.SYSTEM, run_command)

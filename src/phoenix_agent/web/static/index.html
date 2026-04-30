@@ -168,6 +168,33 @@ a{color:var(--accent);text-decoration:none}
 .msg-content a{color:var(--accent);text-decoration:underline}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* --- Command confirmation card --- */
+.confirm-card{
+  background:rgba(210,153,34,.08);border:1px solid var(--warning);
+  border-radius:var(--radius);padding:12px 16px;margin:8px 0;
+}
+.confirm-card .confirm-cmd{
+  font-family:var(--mono);font-size:13px;background:var(--bg);
+  padding:6px 10px;border-radius:6px;margin:6px 0;word-break:break-all;
+  color:var(--text-bright);
+}
+.confirm-card .confirm-label{
+  font-size:13px;color:var(--warning);font-weight:600;margin-bottom:4px;
+}
+.confirm-actions{display:flex;gap:8px;margin-top:8px}
+.btn-confirm{
+  padding:6px 16px;border:none;border-radius:var(--radius-sm);
+  background:var(--warning);color:#000;cursor:pointer;font-size:13px;
+  font-weight:600;transition:all .15s;
+}
+.btn-confirm:hover{background:#e3b341}
+.btn-cancel-confirm{
+  padding:6px 16px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:transparent;color:var(--text-dim);cursor:pointer;font-size:13px;
+  transition:all .15s;
+}
+.btn-cancel-confirm:hover{background:var(--border);color:var(--text)}
 </style>
 </head>
 <body>
@@ -256,15 +283,24 @@ a{color:var(--accent);text-decoration:none}
     return text;
   }
 
-  function addMessage(role, content) {
+  function addMessage(role, content, options) {
     if (emptyState) emptyState.style.display = 'none';
     const div = document.createElement('div');
     div.className = 'message ' + role;
     const avatar = role === 'user' ? 'U' : 'P';
+    let rendered = simpleMarkdown(content);
+
+    // Detect [CONFIRM_REQUIRED] pattern and render confirmation UI
+    const confirmMatch = content.match(/\[CONFIRM_REQUIRED\]\s*This command may modify the system or files:\n\s*> (.+)\n\nTo proceed, call run_command again with confirmed=True/);
+    if (confirmMatch) {
+      const cmd = confirmMatch[1];
+      rendered = renderConfirmCard(cmd);
+    }
+
     div.innerHTML = `
       <div class="message-avatar">${avatar}</div>
       <div>
-        <div class="message-bubble msg-content">${simpleMarkdown(content)}</div>
+        <div class="message-bubble msg-content">${rendered}</div>
         <div class="message-time">${getNow()}</div>
       </div>
     `;
@@ -272,6 +308,38 @@ a{color:var(--accent);text-decoration:none}
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return div;
   }
+
+  function renderConfirmCard(cmd) {
+    const id = 'confirm-' + Date.now();
+    return `
+      <div class="confirm-card" id="${id}">
+        <div class="confirm-label">&#9888;&#65039; Command Requires Confirmation</div>
+        <div class="confirm-cmd">${escHtml(cmd)}</div>
+        <div class="confirm-actions">
+          <button class="btn-confirm" onclick="handleConfirm('${id}')">&#9654; Execute</button>
+          <button class="btn-cancel-confirm" onclick="handleCancel('${id}')">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  window.handleConfirm = async function(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    // Disable buttons
+    card.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+    // Send confirm message — the LLM will re-invoke run_command with confirmed=True
+    const confirmMsg = card.querySelector('.confirm-cmd').textContent;
+    inputEl.value = 'confirm: ' + confirmMsg;
+    sendMessage();
+  };
+
+  window.handleCancel = function(cardId) {
+    const card = document.getElementById(cardId);
+    if (card) {
+      card.innerHTML = '<span style="color:var(--text-dim);font-size:13px">&#x2716; Cancelled</span>';
+    }
+  };
 
   function addTyping() {
     if (emptyState) emptyState.style.display = 'none';
@@ -358,7 +426,12 @@ a{color:var(--accent);text-decoration:none}
           try {
             const parsed = JSON.parse(data);
             if (parsed.error) {
-              bubbleContent.innerHTML = simpleMarkdown('⚠️ ' + parsed.error);
+              const confirmMatch = parsed.error.match(/\[CONFIRM_REQUIRED\]\s*This command may modify the system or files:\n\s*> (.+)\n\nTo proceed/);
+              if (confirmMatch) {
+                bubbleContent.innerHTML = renderConfirmCard(confirmMatch[1]);
+              } else {
+                bubbleContent.innerHTML = simpleMarkdown('⚠️ ' + parsed.error);
+              }
             } else if (parsed.content) {
               fullContent += parsed.content;
               bubbleContent.innerHTML = simpleMarkdown(fullContent);
