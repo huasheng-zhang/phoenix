@@ -425,6 +425,7 @@ def build_web_routes(pool, config=None) -> list:
         return JSONResponse({"files": files[:50]})
 
     # --- Routes ---
+    routes = [
         Route("/", endpoint=_serve_index, methods=["GET"]),
         Route("/api/chat", endpoint=_api_chat, methods=["POST"]),
         Route("/api/chat/stream", endpoint=_api_chat_stream, methods=["POST"]),
