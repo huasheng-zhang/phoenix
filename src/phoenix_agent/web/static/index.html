@@ -882,6 +882,11 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     sessionId=id;sessionStorage.setItem('phoenix_session',id);
     const store=getSessionStore();
     document.getElementById('topbarTitle').textContent=store[id]||id;
+    // Update sidebar highlight
+    const list=document.getElementById('sessionList');
+    list.querySelectorAll('.session-item').forEach(el=>el.classList.remove('active'));
+    const target=list.querySelector('[data-sid="'+id+'"]');
+    if(target)target.classList.add('active');
     // Clear chat and load history for new session
     messagesEl.innerHTML='';
     if(emptyState){messagesEl.appendChild(emptyState);emptyState.style.display='none'}
