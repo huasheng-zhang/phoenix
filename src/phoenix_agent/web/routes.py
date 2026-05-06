@@ -72,31 +72,29 @@ def build_web_routes(pool, config=None) -> list:
     web_cfg = raw_channels.get("web", {})
     auth_token = web_cfg.get("token", "") or ""
 
-import re
+    import re
 
-# --- @mention utility ---
-_MENTION_RE = re.compile(r'@(\w+)\s+([\s\S]*)')
+    # --- @mention utility ---
+    _MENTION_RE = re.compile(r'@(\w+)\s+([\s\S]*)')
 
+    def _parse_mentions(message: str) -> list:
+        """
+        Parse @mention patterns from user message.
 
-def _parse_mentions(message: str) -> list:
-    """
-    Parse @mention patterns from user message.
+        Returns a list of (role_name, task_text) tuples.
+        Supports: "@role task description" anywhere in the message.
+        """
+        mentions = []
+        for m in _MENTION_RE.finditer(message):
+            mentions.append((m.group(1), m.group(2).strip()))
+        return mentions
 
-    Returns a list of (role_name, task_text) tuples.
-    Supports: "@role task description" anywhere in the message.
-    """
-    mentions = []
-    for m in _MENTION_RE.finditer(message):
-        mentions.append((m.group(1), m.group(2).strip()))
-    return mentions
-
-
-def _check_auth(request: Request) -> bool:
-    """Return True if the request is authenticated (or auth is disabled)."""
-    if not auth_token:
-        return True
-    auth_header = request.headers.get("authorization", "")
-    return auth_header == f"Bearer {auth_token}"
+    async def _check_auth(request: Request) -> bool:
+        """Return True if the request is authenticated (or auth is disabled)."""
+        if not auth_token:
+            return True
+        auth_header = request.headers.get("authorization", "")
+        return auth_header == f"Bearer {auth_token}"
 
     async def _auth_guard(request: Request, call_next):
         if not await _check_auth(request):
