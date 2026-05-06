@@ -460,6 +460,82 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   padding:6px 14px 10px;font-size:12px;color:var(--danger);
 }
 
+/* === @MENTION AUTOCOMPLETE === */
+.mention-dropdown{
+  position:absolute;bottom:100%;left:8px;margin-bottom:4px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);min-width:260px;max-width:360px;
+  max-height:240px;overflow-y:auto;z-index:30;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);display:none;
+  animation:fadeIn .15s ease;
+}
+.mention-dropdown.open{display:block}
+.mention-dropdown-header{
+  padding:8px 12px;font-size:11px;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:.5px;
+  border-bottom:1px solid var(--border);
+}
+.mention-item{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;cursor:pointer;transition:background .15s;
+  border-left:3px solid transparent;
+}
+.mention-item:hover,.mention-item.active{
+  background:var(--surface2);border-left-color:var(--accent);
+}
+.mention-item-icon{
+  width:28px;height:28px;border-radius:7px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  background:var(--surface3);
+}
+.mention-item-info{flex:1;min-width:0}
+.mention-item-name{font-size:13px;font-weight:600;color:var(--text-bright)}
+.mention-item-desc{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mention-empty{padding:16px;text-align:center;font-size:12px;color:var(--text-dim)}
+.mention-tag{
+  display:inline-flex;align-items:center;gap:4px;
+  background:var(--accent-bg);border:1px solid rgba(91,156,245,.3);
+  border-radius:12px;padding:1px 8px;font-size:12px;color:var(--accent);
+  font-weight:600;
+}
+
+/* === MENTION RESULT CARD === */
+.mention-card{
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:0;margin:8px 0;overflow:hidden;border-left:3px solid #8b5cf6;
+  animation:fadeIn .3s ease;
+}
+.mention-card.processing{border-left-color:var(--warning)}
+.mention-card.success{border-left-color:var(--success)}
+.mention-card.error{border-left-color:var(--danger)}
+.mention-card-header{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px 6px;
+}
+.mention-card-avatar{
+  width:28px;height:28px;border-radius:6px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  background:var(--surface3);
+}
+.mention-card-role{font-size:12px;font-weight:600;color:var(--text-bright)}
+.mention-card-status{
+  font-size:10px;padding:1px 6px;border-radius:8px;font-weight:500;
+  margin-left:auto;
+}
+.mention-card-status.processing{background:rgba(224,160,48,.12);color:var(--warning)}
+.mention-card-status.success{background:rgba(69,194,106,.12);color:var(--success)}
+.mention-card-status.error{background:rgba(240,80,80,.12);color:var(--danger)}
+.mention-card-body{
+  padding:0 12px 8px;
+}
+.mention-card-content{
+  font-size:12px;color:var(--text);line-height:1.5;
+  background:var(--bg);border-radius:6px;padding:8px 10px;
+  word-break:break-word;max-height:120px;overflow-y:auto;
+}
+.mention-card-error{padding:0 12px 8px;font-size:12px;color:var(--danger)}
+}
+
 /* Agent card running animation */
 .agent-card.running{border-left-color:var(--warning)}
 .agent-card.running .agent-card-avatar{
@@ -1169,6 +1245,197 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     return html;
   }
 
+  // --- Mention result card renderer ---
+  // cardId: optional, set as element id for later DOM replacement
+  function renderMentionCard(data, state, cardId) {
+    // data: {role, task?, success?, content?, error?, duration_ms?}
+    // state: 'processing' | 'success' | 'error'
+    const rm = getRoleMeta(data.role || 'unknown');
+    const statusClass = state || 'processing';
+    const statusLabel = statusClass === 'processing' ? '\u23f3 Running...' : (statusClass === 'success' ? '\u2705 Done' : '\u26a0\ufe0f Failed');
+    const duration = data.duration_ms ? (data.duration_ms < 1000 ? data.duration_ms + 'ms' : (data.duration_ms / 1000).toFixed(1) + 's') : '';
+
+    let html = '<div class="mention-card ' + statusClass + '"' + (cardId ? ' id="' + escHtml(cardId) + '"' : '') + '>'
+      + '<div class="mention-card-header">'
+      + '<div class="mention-card-avatar">' + rm.icon + '</div>'
+      + '<div class="mention-card-role">@' + escHtml(data.role || 'unknown') + '</div>'
+      + '<div class="mention-card-status ' + statusClass + '">' + statusLabel + '</div>'
+      + (duration ? '<div style="font-size:10px;color:var(--text-dim)">' + duration + '</div>' : '')
+      + '</div>';
+
+    if (data.task) {
+      html += '<div class="mention-card-body"><div class="mention-card-content">'
+        + '<span style="font-weight:600;color:var(--text-dim)">Task: </span>' + escHtml(data.task)
+        + '</div></div>';
+    }
+
+    if (state === 'success' && data.content) {
+      html += '<div class="mention-card-body"><div class="mention-card-content">'
+        + renderMd(data.content.length > 600 ? data.content.substring(0, 600) + '...' : data.content)
+        + '</div></div>';
+    }
+
+    if (state === 'error' && data.error) {
+      html += '<div class="mention-card-error">\u26a0\ufe0f ' + escHtml(data.error) + '</div>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  // --- @Mention autocomplete system ---
+  const mentionState = {
+    active: false,        // is the dropdown open?
+    panelIdx: -1,         // which panel's input
+    query: '',            // current filter query after @
+    atPos: -1,            // position of @ in input value
+    items: [],            // filtered role list
+    selectedIdx: -1,      // keyboard selection index
+    roles: [],            // cached role list from ROLE_META + custom agents
+  };
+
+  function getMentionRoles() {
+    // Combine ROLE_META + custom agents
+    const roles = Object.keys(ROLE_META).map(k => ({name: k, icon: ROLE_META[k].icon, desc: ROLE_META[k].desc}));
+    if (typeof customAgents !== 'undefined' && Array.isArray(customAgents)) {
+      customAgents.forEach(a => {
+        if (!roles.find(r => r.name === a.name)) {
+          roles.push({name: a.name, icon: '\u{1f916}', desc: 'Custom agent'});
+        }
+      });
+    }
+    return roles;
+  }
+
+  function showMentionDropdown(panelIdx, query, atPos) {
+    const allRoles = getMentionRoles();
+    const q = query.toLowerCase();
+    const filtered = q ? allRoles.filter(r => r.name.toLowerCase().includes(q)) : allRoles;
+
+    mentionState.active = true;
+    mentionState.panelIdx = panelIdx;
+    mentionState.query = query;
+    mentionState.atPos = atPos;
+    mentionState.items = filtered;
+    mentionState.selectedIdx = filtered.length > 0 ? 0 : -1;
+
+    // Find or create dropdown element
+    let dd = document.getElementById('mentionDropdown-' + panelIdx);
+    if (!dd) {
+      dd = document.createElement('div');
+      dd.id = 'mentionDropdown-' + panelIdx;
+      dd.className = 'mention-dropdown';
+      // Insert after input-wrapper
+      const wrapper = document.getElementById('userInput-' + panelIdx)?.closest('.input-wrapper');
+      if (wrapper) wrapper.appendChild(dd);
+    }
+
+    if (filtered.length === 0) {
+      dd.innerHTML = '<div class="mention-empty">No matching roles</div>';
+    } else {
+      let html = '<div class="mention-dropdown-header">\u{1f916} Mention an Agent</div>';
+      filtered.forEach((r, i) => {
+        html += '<div class="mention-item' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '" data-role="' + escHtml(r.name) + '">'
+          + '<div class="mention-item-icon">' + r.icon + '</div>'
+          + '<div class="mention-item-info">'
+          + '<div class="mention-item-name">@' + escHtml(r.name) + '</div>'
+          + '<div class="mention-item-desc">' + escHtml(r.desc) + '</div>'
+          + '</div></div>';
+      });
+      dd.innerHTML = html;
+
+      // Click handlers
+      dd.querySelectorAll('.mention-item').forEach(el => {
+        el.addEventListener('mousedown', function(e) {
+          e.preventDefault(); // prevent input blur
+          selectMentionItem(panelIdx, parseInt(this.dataset.idx));
+        });
+      });
+    }
+
+    dd.classList.add('open');
+  }
+
+  function hideMentionDropdown() {
+    mentionState.active = false;
+    mentionState.panelIdx = -1;
+    document.querySelectorAll('.mention-dropdown.open').forEach(el => el.classList.remove('open'));
+  }
+
+  function selectMentionItem(panelIdx, idx) {
+    const role = mentionState.items[idx];
+    if (!role) return;
+
+    const inp = document.getElementById('userInput-' + panelIdx);
+    if (!inp) return;
+
+    // Replace @query with @role followed by a space
+    const before = inp.value.substring(0, mentionState.atPos);
+    const after = inp.value.substring(mentionState.atPos + mentionState.query.length + 1); // +1 for @
+    inp.value = before + '@' + role.name + ' ' + after;
+    inp.focus();
+
+    const newPos = mentionState.atPos + role.name.length + 2; // after @role + space
+    inp.setSelectionRange(newPos, newPos);
+
+    hideMentionDropdown();
+    autoResizeInput(panelIdx);
+  }
+
+  function handleMentionInput(panelIdx) {
+    const inp = document.getElementById('userInput-' + panelIdx);
+    if (!inp) return;
+
+    const val = inp.value;
+    const cursorPos = inp.selectionStart;
+
+    // Find @ before cursor
+    const textBefore = val.substring(0, cursorPos);
+    const atMatch = textBefore.match(/@(\w*)$/);
+
+    if (atMatch) {
+      showMentionDropdown(panelIdx, atMatch[1], cursorPos - atMatch[0].length);
+    } else {
+      hideMentionDropdown();
+    }
+  }
+
+  function handleMentionKeydown(panelIdx, e) {
+    if (!mentionState.active) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (mentionState.items.length > 0) {
+        mentionState.selectedIdx = (mentionState.selectedIdx + 1) % mentionState.items.length;
+        updateMentionSelection(panelIdx);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (mentionState.items.length > 0) {
+        mentionState.selectedIdx = (mentionState.selectedIdx - 1 + mentionState.items.length) % mentionState.items.length;
+        updateMentionSelection(panelIdx);
+      }
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      if (mentionState.active && mentionState.selectedIdx >= 0) {
+        e.preventDefault();
+        selectMentionItem(panelIdx, mentionState.selectedIdx);
+        return true; // consumed
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hideMentionDropdown();
+    }
+    return false;
+  }
+
+  function updateMentionSelection(panelIdx) {
+    const dd = document.getElementById('mentionDropdown-' + panelIdx);
+    if (!dd) return;
+    dd.querySelectorAll('.mention-item').forEach((el, i) => {
+      el.classList.toggle('active', i === mentionState.selectedIdx);
+    });
+  }
+
   // --- Markdown renderer ---
   function renderMd(text){
     // Code blocks
@@ -1295,6 +1562,9 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     const txt=panelEl(activePanel,'statusText');
     if(txt)txt.textContent='Ready';
   }
+  function clearStatusDelegating(){
+    setStatusReady();
+  }
 
   // --- API ---
   async function apiCall(endpoint,body){
@@ -1341,6 +1611,8 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       const reader=resp.body.getReader();const dec=new TextDecoder();
       let full='',confirmShown=false;
       let agentCards='';
+      let mentionCards='';  // track @mention result cards
+      let mentionCardMap={}; // role -> card id for updating
       let bubble=addMessage(idx,'assistant','');
       const bContent=bubble.querySelector('.md');
       const msgsEl=panelMsgs(idx);
@@ -1359,6 +1631,32 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
                 selectAgent(idx,ai.agent_name);
               }
             }
+            else if(p.mention_start){
+              // @mention delegation started
+              const ms=p.mention_start;
+              const cardId='mention-card-'+ms.role+'-'+Date.now();
+              mentionCardMap[ms.role]=cardId;
+              mentionCards+=renderMentionCard(ms,'processing',cardId);
+              bContent.innerHTML=mentionCards+agentCards+renderMd(full);
+              if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
+              setStatusDelegating(ms.role);
+            }
+            else if(p.mention_result){
+              // @mention delegation completed
+              const mr=p.mention_result;
+              // Find and replace the processing card for this role
+              const oldCardId=mentionCardMap[mr.role];
+              const oldCard=oldCardId?bContent.querySelector('#'+oldCardId):null;
+              const newCard=renderMentionCard(mr,mr.success?'success':'error');
+              if(oldCard){
+                oldCard.outerHTML=newCard;
+              } else {
+                mentionCards+=newCard;
+                bContent.innerHTML=mentionCards+agentCards+renderMd(full);
+              }
+              if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
+              clearStatusDelegating();
+            }
             else if(p.tool_result){
               const tr=p.tool_result;
               if(tr.tool_name==='delegate_to_agent'||tr.tool_name==='ask_agent'){
@@ -1372,34 +1670,34 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
                 }
                 if(confirmShown){
                   const card=bContent.querySelector('.confirm-card');
-                  bContent.innerHTML=agentCards+renderMd(full)+(card?card.outerHTML:'');
-                }else{bContent.innerHTML=agentCards+renderMd(full)}
+                  bContent.innerHTML=mentionCards+agentCards+renderMd(full)+(card?card.outerHTML:'');
+                }else{bContent.innerHTML=mentionCards+agentCards+renderMd(full)}
               }
               else if(tr.metadata&&tr.metadata.needs_confirmation&&tr.metadata.command){
-                bContent.innerHTML=(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
+                bContent.innerHTML=mentionCards+agentCards+(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
                 confirmShown=true;
               }else if(tr.metadata&&tr.metadata.send_file){
-                bContent.innerHTML=(full?renderMd(full):'')+renderSentFileCard(tr);
+                bContent.innerHTML=mentionCards+agentCards+(full?renderMd(full):'')+renderSentFileCard(tr);
                 full+='\n\n[File: '+(tr.metadata.filename||'file')+']';
               }else{
                 const info=tr.success?'\u2705 '+(tr.tool_name||'tool')+' executed':'\u26a0\ufe0f '+(tr.error||(tr.tool_name||'tool')+' failed');
                 full+='\n\n'+info;
                 if(confirmShown){
                   const card=bContent.querySelector('.confirm-card');
-                  bContent.innerHTML=renderMd(full)+(card?card.outerHTML:'');
-                }else{bContent.innerHTML=renderMd(full)}
+                  bContent.innerHTML=mentionCards+agentCards+renderMd(full)+(card?card.outerHTML:'');
+                }else{bContent.innerHTML=mentionCards+agentCards+renderMd(full)}
               }
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }else if(p.error){
               const card=bContent.querySelector('.confirm-card');
-              bContent.innerHTML=renderMd('\u26a0\ufe0f '+p.error)+(card?card.outerHTML:'');
+              bContent.innerHTML=mentionCards+agentCards+renderMd('\u26a0\ufe0f '+p.error)+(card?card.outerHTML:'');
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }else if(p.content){
               full+=p.content;
               if(confirmShown){
                 const card=bContent.querySelector('.confirm-card');
-                bContent.innerHTML=renderMd(full)+(card?card.outerHTML:'');
-              }else{bContent.innerHTML=renderMd(full)}
+                bContent.innerHTML=mentionCards+agentCards+renderMd(full)+(card?card.outerHTML:'');
+              }else{bContent.innerHTML=mentionCards+agentCards+renderMd(full)}
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }
           }catch(e){}
@@ -1410,6 +1708,66 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       addMessage(idx,'assistant',e.message==='Unauthorized'?'Unauthorized. Check your token.':'Connection error.');
     }
     setLoadingP(idx,false);
+  };
+
+  // --- Direct delegation (standalone, via /api/chat/delegate) ---
+  window.sendDelegate=async function(idx, role, task, context){
+    if(!role||!task){return}
+    const sid=getPanelSession(idx);
+    const rm=getRoleMeta(role);
+
+    // Show user message
+    addMessage(idx,'user','@'+role+' '+task);
+    setLoadingP(idx,true);addTyping(idx);
+    setStatusDelegating(role);
+
+    try{
+      const body={role:role,task:task,session_id:sid};
+      if(context)body.context=context;
+      const resp=await apiCall('/api/chat/delegate',body);
+      if(!resp.ok){removeTyping(idx);const err=await resp.text();addMessage(idx,'assistant','Error: '+err);setLoadingP(idx,false);setStatusReady();return}
+
+      removeTyping(idx);
+      const reader=resp.body.getReader();const dec=new TextDecoder();
+      let bubble=addMessage(idx,'assistant','');
+      const bContent=bubble.querySelector('.md');
+      const msgsEl=panelMsgs(idx);
+      let cardId=null;
+
+      while(true){
+        const{done,value}=await reader.read();if(done)break;
+        const chunk=dec.decode(value,{stream:true});
+        for(const line of chunk.split('\n')){
+          if(!line.startsWith('data: '))continue;
+          const data=line.slice(6);if(data==='[DONE]')break;
+          try{
+            const p=JSON.parse(data);
+            if(p.delegate_start){
+              cardId='delegate-card-'+Date.now();
+              bContent.innerHTML=renderMentionCard(p.delegate_start,'processing',cardId);
+              if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
+            }else if(p.delegate_result){
+              const dr=p.delegate_result;
+              dr.success=true; // delegate_result means success
+              const newCard=renderMentionCard(dr,'success');
+              const oldCard=cardId?bContent.querySelector('#'+cardId):null;
+              if(oldCard){oldCard.outerHTML=newCard}
+              else{bContent.innerHTML=newCard}
+              if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
+            }else if(p.delegate_error){
+              const de=p.delegate_error;
+              bContent.innerHTML=renderMentionCard(de,'error');
+              if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
+            }
+          }catch(e){}
+        }
+      }
+    }catch(e){
+      removeTyping(idx);
+      addMessage(idx,'assistant','Connection error: '+e.message);
+    }
+    setLoadingP(idx,false);
+    setStatusReady();
   };
 
   // --- Session management ---
@@ -2018,8 +2376,16 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   // --- Keyboard ---
   const _in0b=document.getElementById('userInput-0');
   if(_in0b){
-    _in0b.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(0)}});
-    _in0b.addEventListener('input',function(){autoResizeInput(0)});
+    _in0b.addEventListener('keydown',function(e){
+      if(e.key==='Enter'&&!e.shiftKey){
+        if(handleMentionKeydown(0, e)) return;
+        e.preventDefault();sendMessage(0);
+      } else {
+        handleMentionKeydown(0, e);
+      }
+    });
+    _in0b.addEventListener('input',function(){autoResizeInput(0);handleMentionInput(0)});
+    _in0b.addEventListener('blur',function(){setTimeout(hideMentionDropdown, 150)});
   }
 
   // --- Init ---
@@ -2088,8 +2454,9 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
         for(const f of e.dataTransfer.files){const r=await uploadFile(f);if(r)pendingFilesMap[idx].push(r)}
         renderAttachPreview(idx);
       });
-      newIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(idx)}});
-      newIn.addEventListener('input',function(){autoResizeInput(idx)});
+      newIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){if(handleMentionKeydown(idx,e))return;e.preventDefault();sendMessage(idx)}});
+      newIn.addEventListener('input',function(){autoResizeInput(idx);handleMentionInput(idx)});
+      newIn.addEventListener('blur',function(){setTimeout(hideMentionDropdown,150)});
     }
 
     renderPanelTabs();

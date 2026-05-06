@@ -72,12 +72,31 @@ def build_web_routes(pool, config=None) -> list:
     web_cfg = raw_channels.get("web", {})
     auth_token = web_cfg.get("token", "") or ""
 
-    async def _check_auth(request: Request) -> bool:
-        """Return True if the request is authenticated (or auth is disabled)."""
-        if not auth_token:
-            return True
-        auth_header = request.headers.get("authorization", "")
-        return auth_header == f"Bearer {auth_token}"
+import re
+
+# --- @mention utility ---
+_MENTION_RE = re.compile(r'@(\w+)\s+([\s\S]*)')
+
+
+def _parse_mentions(message: str) -> list:
+    """
+    Parse @mention patterns from user message.
+
+    Returns a list of (role_name, task_text) tuples.
+    Supports: "@role task description" anywhere in the message.
+    """
+    mentions = []
+    for m in _MENTION_RE.finditer(message):
+        mentions.append((m.group(1), m.group(2).strip()))
+    return mentions
+
+
+def _check_auth(request: Request) -> bool:
+    """Return True if the request is authenticated (or auth is disabled)."""
+    if not auth_token:
+        return True
+    auth_header = request.headers.get("authorization", "")
+    return auth_header == f"Bearer {auth_token}"
 
     async def _auth_guard(request: Request, call_next):
         if not await _check_auth(request):
@@ -334,6 +353,14 @@ def build_web_routes(pool, config=None) -> list:
             attachment_context = "\n".join(file_lines)
             message = (message + "\n\n" + attachment_context) if message else attachment_context
 
+        # --- Pre-parse @mentions before entering SSE ---
+        mentions = _parse_mentions(message)
+        # Strip @mention prefixes from the message sent to the main agent
+        # but keep the task description
+        clean_message = _MENTION_RE.sub(r'\2', message).strip()
+        if not clean_message:
+            clean_message = message  # fallback: keep original if all was @mentions
+
         async def _event_stream():
             """Generate SSE events from the agent response."""
             try:
@@ -350,6 +377,44 @@ def build_web_routes(pool, config=None) -> list:
                 if active_agent_name:
                     result_queue.put(("agent_info", {"agent_name": active_agent_name}))
 
+                # --- Handle @mention delegations BEFORE the main agent ---
+                mention_results = []
+                if mentions and pool.orchestrator:
+                    for role_name, task_text in mentions:
+                        # Notify frontend about mention delegation starting
+                        result_queue.put(("mention_start", {
+                            "role": role_name,
+                            "task": task_text[:200],
+                        }))
+                        # Delegate to the mentioned role via orchestrator
+                        deleg_result = pool.orchestrator.delegate(
+                            role_name=role_name,
+                            task=task_text,
+                            context=f"User mentioned @{role_name} in main chat",
+                        )
+                        mention_results.append(deleg_result)
+                        # Push result as SSE event
+                        result_queue.put(("mention_result", {
+                            "role": role_name,
+                            "success": deleg_result.success,
+                            "content": deleg_result.content,
+                            "error": deleg_result.error,
+                            "duration_ms": deleg_result.duration_ms,
+                            "iterations": deleg_result.iterations,
+                        }))
+                elif mentions and not pool.orchestrator:
+                    # No orchestrator available — inform the user
+                    for role_name, task_text in mentions:
+                        result_queue.put(("mention_result", {
+                            "role": role_name,
+                            "success": False,
+                            "content": "",
+                            "error": f"No orchestrator available for @{role_name}. "
+                                    "Check that agent_roles are configured.",
+                            "duration_ms": 0,
+                            "iterations": 0,
+                        }))
+
                 def _on_tool_result(tool_name, tool_args, tool_result):
                     """Callback: push tool results to the SSE queue so the
                     frontend can react (e.g. show confirmation buttons)."""
@@ -365,7 +430,29 @@ def build_web_routes(pool, config=None) -> list:
                 def _run_agent():
                     try:
                         agent.on_tool_call = _on_tool_result
-                        response = agent.run(message)
+                        # Build the message: inject mention results as context
+                        effective_msg = clean_message
+                        if mention_results:
+                            mention_ctx = []
+                            for mr in mention_results:
+                                if mr.success:
+                                    mention_ctx.append(
+                                        f"[Result from @{mr.role} ({mr.duration_ms}ms, "
+                                        f"{mr.iterations} iterations)]:\n{mr.content}"
+                                    )
+                                else:
+                                    mention_ctx.append(
+                                        f"[Error from @{mr.role}]: {mr.error}"
+                                    )
+                            effective_msg = (
+                                "[Below are results from agents you mentioned via @mention. "
+                                "Incorporate them into your response as appropriate.]\n\n"
+                                + "\n\n---\n\n".join(mention_ctx)
+                                + "\n\n---\n\n"
+                                + (clean_message or "[User only used @mentions without additional instructions. "
+                                  "Summarize the results above.]")
+                            )
+                        response = agent.run(effective_msg)
                         # Send the final LLM text response
                         result_queue.put(("chunk", response or ""))
                     except Exception as exc:
@@ -382,6 +469,10 @@ def build_web_routes(pool, config=None) -> list:
                         msg_type, msg_data = result_queue.get(timeout=0.1)
                         if msg_type == "agent_info":
                             yield f"data: {json.dumps({'agent_info': msg_data})}\n\n"
+                        elif msg_type == "mention_start":
+                            yield f"data: {json.dumps({'mention_start': msg_data})}\n\n"
+                        elif msg_type == "mention_result":
+                            yield f"data: {json.dumps({'mention_result': msg_data})}\n\n"
                         elif msg_type == "chunk":
                             # Send as JSON in SSE data field
                             yield f"data: {json.dumps({'content': msg_data})}\n\n"
@@ -972,11 +1063,132 @@ def build_web_routes(pool, config=None) -> list:
         del _custom_agents[name]
         return JSONResponse({"message": f"Agent '{name}' deleted"})
 
+    async def _api_delegate(request: Request):
+        """POST /api/chat/delegate — SSE endpoint for delegating a task from the main chat.
+
+        Request body:
+            role: str       — agent role name (required)
+            task: str       — task description (required)
+            context: str    — optional background context
+            session_id: str — optional session ID for tracking
+        """
+        if not await _check_auth(request):
+            return PlainTextResponse("Unauthorized", status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return PlainTextResponse("Invalid JSON", status_code=400)
+
+        role_name = body.get("role", "").strip()
+        task = body.get("task", "").strip()
+        context = body.get("context", "").strip()
+
+        if not role_name:
+            return PlainTextResponse("role is required", status_code=400)
+        if not task:
+            return PlainTextResponse("task is required", status_code=400)
+
+        async def _event_stream():
+            try:
+                import queue as _queue
+                import threading
+
+                result_queue = _queue.Queue()
+                done_event = threading.Event()
+
+                def _run_delegation():
+                    try:
+                        from phoenix_agent.tools.builtin import get_orchestrator
+                        orchestrator = get_orchestrator()
+
+                        if not orchestrator:
+                            result_queue.put(("error", "Multi-agent collaboration not enabled. No orchestrator available."))
+                            return
+
+                        # Check role exists
+                        role = orchestrator.get_role(role_name)
+                        if not role:
+                            available = [r.name for r in orchestrator._roles.values()]
+                            result_queue.put(("error", f"Unknown role '{role_name}'. Available: {', '.join(available) or '(none)'}"))
+                            return
+
+                        # Send delegation start event
+                        result_queue.put(("delegate_start", {
+                            "role": role_name,
+                            "task": task,
+                            "description": role.description or "",
+                        }))
+
+                        result = orchestrator.delegate(
+                            role_name=role_name,
+                            task=task,
+                            context=context,
+                        )
+
+                        if result.success:
+                            result_queue.put(("delegate_result", {
+                                "role": result.role,
+                                "content": result.content,
+                                "duration_ms": result.duration_ms,
+                                "iterations": result.iterations,
+                            }))
+                        else:
+                            result_queue.put(("delegate_error", {
+                                "role": result.role,
+                                "error": result.error,
+                                "duration_ms": result.duration_ms,
+                            }))
+
+                    except Exception as exc:
+                        logger.exception("[web] Error in delegation")
+                        result_queue.put(("error", str(exc)))
+                    finally:
+                        done_event.set()
+                        result_queue.put(("done", ""))
+
+                thread = threading.Thread(target=_run_delegation, daemon=True)
+                thread.start()
+
+                while not done_event.is_set() or not result_queue.empty():
+                    try:
+                        msg_type, msg_data = result_queue.get(timeout=0.1)
+                        if msg_type == "delegate_start":
+                            yield f"data: {json.dumps({'delegate_start': msg_data})}\n\n"
+                        elif msg_type == "delegate_result":
+                            yield f"data: {json.dumps({'delegate_result': msg_data})}\n\n"
+                        elif msg_type == "delegate_error":
+                            yield f"data: {json.dumps({'delegate_error': msg_data})}\n\n"
+                        elif msg_type == "error":
+                            yield f"data: {json.dumps({'error': msg_data})}\n\n"
+                        elif msg_type == "done":
+                            yield "data: [DONE]\n\n"
+                    except _queue.Empty:
+                        continue
+
+                thread.join(timeout=5)
+
+            except Exception as exc:
+                logger.exception("[web] Error in delegate SSE stream")
+                yield f"data: {json.dumps({'error': 'Internal error'})}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            _event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     # --- Routes ---
     routes = [
         Route("/", endpoint=_serve_index, methods=["GET"]),
         Route("/api/chat", endpoint=_api_chat, methods=["POST"]),
         Route("/api/chat/stream", endpoint=_api_chat_stream, methods=["POST"]),
+        Route("/api/chat/delegate", endpoint=_api_delegate, methods=["POST"]),
         Route("/api/chat/collaborate", endpoint=_api_collaborate, methods=["POST"]),
         Route("/api/session/new", endpoint=_api_session_new, methods=["POST"]),
         Route("/api/history", endpoint=_api_history, methods=["GET"]),
