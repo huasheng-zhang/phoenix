@@ -537,6 +537,38 @@ def build_web_routes(pool, config=None) -> list:
             logger.exception("[web] Error listing skills")
             return JSONResponse({"error": str(exc)}, status_code=500)
 
+    # --- Agent roles API ---
+
+    async def _api_list_roles(request: Request):
+        """GET /api/roles — list all discovered agent roles for multi-agent collaboration."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            from phoenix_agent.core.agents.roles import discover_all_roles
+
+            # Discover roles from YAML files + inline config
+            config_data = {}
+            if hasattr(cfg, "_file_config"):
+                config_data = cfg._file_config
+            all_roles = discover_all_roles(config_data)
+
+            roles = []
+            for role in all_roles:
+                roles.append({
+                    "name": role.name,
+                    "description": role.description or "",
+                    "tools": role.config.tools or [],
+                    "model": role.config.model or "",
+                    "max_iterations": role.config.max_iterations,
+                    "temperature": role.config.temperature,
+                })
+            roles.sort(key=lambda r: r["name"])
+            return JSONResponse({"roles": roles, "count": len(roles)})
+        except Exception as exc:
+            logger.exception("[web] Error listing roles")
+            return JSONResponse({"error": str(exc)}, status_code=500)
+
     # --- Routes ---
     routes = [
         Route("/", endpoint=_serve_index, methods=["GET"]),
@@ -551,6 +583,7 @@ def build_web_routes(pool, config=None) -> list:
         Route("/api/config", endpoint=_api_get_config, methods=["GET"]),
         Route("/api/config", endpoint=_api_update_config, methods=["PUT"]),
         Route("/api/skills", endpoint=_api_list_skills, methods=["GET"]),
+        Route("/api/roles", endpoint=_api_list_roles, methods=["GET"]),
     ]
 
     return routes

@@ -408,6 +408,88 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   background:var(--accent-bg);color:var(--accent);border:1px solid rgba(91,156,245,.2);
 }
 
+/* === AGENT DELEGATION CARDS === */
+.agent-card{
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:0;margin:10px 0;overflow:hidden;border-left:3px solid var(--accent);
+  animation:fadeIn .3s ease;
+}
+.agent-card.delegate{border-left-color:var(--accent)}
+.agent-card.ask{border-left-color:var(--warning)}
+.agent-card.failed{border-left-color:var(--danger)}
+.agent-card-header{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px 8px;
+}
+.agent-card-avatar{
+  width:32px;height:32px;border-radius:8px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  background:var(--surface3);
+}
+.agent-card-title{flex:1;min-width:0}
+.agent-card-role{
+  font-size:13px;font-weight:600;color:var(--text-bright);
+  display:flex;align-items:center;gap:6px;
+}
+.agent-card-badge{
+  font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.agent-card-badge.delegate{background:var(--accent-bg);color:var(--accent);border:1px solid rgba(91,156,245,.25)}
+.agent-card-badge.ask{background:rgba(224,160,48,.12);color:var(--warning);border:1px solid rgba(224,160,48,.25)}
+.agent-card-badge.failed{background:rgba(240,80,80,.12);color:var(--danger);border:1px solid rgba(240,80,80,.25)}
+.agent-card-duration{
+  font-size:11px;color:var(--text-dim);font-family:var(--mono);
+  display:flex;align-items:center;gap:4px;
+}
+.agent-card-body{
+  padding:0 14px 8px;
+}
+.agent-card-task{
+  font-size:12px;color:var(--text);line-height:1.5;
+  background:var(--bg);border-radius:6px;padding:8px 10px;
+  word-break:break-word;
+}
+.agent-card-task-label{font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.agent-card-footer{
+  display:flex;align-items:center;gap:12px;
+  padding:6px 14px 10px;font-size:11px;color:var(--text-dim);
+}
+.agent-card-footer span{display:flex;align-items:center;gap:4px}
+.agent-card-error{
+  padding:6px 14px 10px;font-size:12px;color:var(--danger);
+}
+
+/* Agent card running animation */
+.agent-card.running{border-left-color:var(--warning)}
+.agent-card.running .agent-card-avatar{
+  background:linear-gradient(135deg,var(--accent),var(--warning));
+  animation:agentPulse 1.5s infinite;
+}
+@keyframes agentPulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* Role-specific accent colors */
+.agent-card[data-role="researcher"]{border-left-color:#5b9cf5}
+.agent-card[data-role="researcher"] .agent-card-avatar{background:rgba(91,156,245,.15)}
+.agent-card[data-role="coder"]{border-left-color:#45c26a}
+.agent-card[data-role="coder"] .agent-card-avatar{background:rgba(69,194,106,.15)}
+.agent-card[data-role="reviewer"]{border-left-color:#f05050}
+.agent-card[data-role="reviewer"] .agent-card-avatar{background:rgba(240,80,80,.15)}
+.agent-card[data-role="writer"]{border-left-color:#e0a030}
+.agent-card[data-role="writer"] .agent-card-avatar{background:rgba(224,160,48,.15)}
+.agent-card[data-role="analyst"]{border-left-color:#8b5cf6}
+.agent-card[data-role="analyst"] .agent-card-avatar{background:rgba(139,92,246,.15)}
+.agent-card[data-role="devops"]{border-left-color:#f97316}
+.agent-card[data-role="devops"] .agent-card-avatar{background:rgba(249,115,22,.15)}
+.agent-card[data-role="translator"]{border-left-color:#06b6d4}
+.agent-card[data-role="translator"] .agent-card-avatar{background:rgba(6,182,212,.15)}
+.agent-card[data-role="summarizer"]{border-left-color:#ec4899}
+.agent-card[data-role="summarizer"] .agent-card-avatar{background:rgba(236,72,153,.15)}
+.agent-card[data-role="tester"]{border-left-color:#22d3ee}
+.agent-card[data-role="tester"] .agent-card-avatar{background:rgba(34,211,238,.15)}
+.agent-card[data-role="planner"]{border-left-color:#a78bfa}
+.agent-card[data-role="planner"] .agent-card-avatar{background:rgba(167,139,250,.15)}
+
 /* === FILE PANEL === */
 .file-panel-overlay{
   position:fixed;top:0;left:0;width:100%;height:100%;
@@ -531,12 +613,14 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       <button class="panel-tab active" onclick="switchTab('model',this)">Model</button>
       <button class="panel-tab" onclick="switchTab('channels',this)">Channels</button>
       <button class="panel-tab" onclick="switchTab('skills',this)">Skills</button>
+      <button class="panel-tab" onclick="switchTab('roles',this)">Roles</button>
       <button class="panel-tab" onclick="switchTab('agent',this)">Agent</button>
     </div>
     <div class="panel-body" id="panelBody">
       <div id="tab-model"></div>
       <div id="tab-channels" style="display:none"></div>
       <div id="tab-skills" style="display:none"></div>
+      <div id="tab-roles" style="display:none"></div>
       <div id="tab-agent" style="display:none"></div>
     </div>
   </div>
@@ -621,6 +705,78 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     for(const f of e.dataTransfer.files){const r=await uploadFile(f);if(r)pendingFiles.push(r)}
     renderAttachmentPreview();
   });
+
+  // --- Agent role metadata ---
+  const ROLE_META = {
+    researcher:  {icon:'\u{1f50d}', label:'Researcher',  color:'#5b9cf5', desc:'Web search & information gathering'},
+    coder:       {icon:'\u{1f4bb}', label:'Coder',       color:'#45c26a', desc:'Write, debug & refactor code'},
+    reviewer:    {icon:'\u{1f50e}', label:'Reviewer',    color:'#f05050', desc:'Code review: correctness, security, style'},
+    writer:      {icon:'\u270f\ufe0f', label:'Writer',   color:'#e0a030', desc:'Technical docs, README, guides'},
+    analyst:     {icon:'\u{1f4ca}', label:'Analyst',     color:'#8b5cf6', desc:'Log analysis, metrics, trends'},
+    devops:      {icon:'\u{1f680}', label:'DevOps',      color:'#f97316', desc:'Server admin, deployment, CI/CD'},
+    translator:  {icon:'\u{1f310}', label:'Translator',  color:'#06b6d4', desc:'Translation & localization'},
+    summarizer:  {icon:'\u{1f4dd}', label:'Summarizer',  color:'#ec4899', desc:'Condense content into summaries'},
+    tester:      {icon:'\u{1f9ea}', label:'Tester',      color:'#22d3ee', desc:'Write, run & debug test suites'},
+    planner:     {icon:'\u{1f3d7}\ufe0f', label:'Planner', color:'#a78bfa', desc:'Architecture design & task planning'},
+  };
+
+  function getRoleMeta(roleName) {
+    return ROLE_META[roleName] || {icon:'\u{1f916}', label:roleName, color:'var(--accent)', desc:'Custom agent role'};
+  }
+
+  // --- Agent delegation card renderer ---
+  function renderAgentCard(tr) {
+    const meta = tr.metadata || {};
+    const roleName = meta.delegated_to || meta.asked || tr.tool_args?.role || 'unknown';
+    const isAsk = tr.tool_name === 'ask_agent';
+    const isFailed = !tr.success;
+    const rm = getRoleMeta(roleName);
+    const typeClass = isFailed ? 'failed' : (isAsk ? 'ask' : 'delegate');
+    const badgeLabel = isFailed ? 'Failed' : (isAsk ? 'Consulted' : 'Delegated');
+
+    // Extract task/question from tool_args
+    const taskText = tr.tool_args?.task || tr.tool_args?.question || '';
+    const contextText = tr.tool_args?.context || '';
+    const duration = meta.duration_ms ? (meta.duration_ms < 1000 ? meta.duration_ms + 'ms' : (meta.duration_ms / 1000).toFixed(1) + 's') : '';
+    const iterations = meta.iterations ? meta.iterations + ' iteration' + (meta.iterations > 1 ? 's' : '') : '';
+
+    let html = '<div class="agent-card ' + typeClass + '" data-role="' + escHtml(roleName) + '">'
+      + '<div class="agent-card-header">'
+      + '<div class="agent-card-avatar">' + rm.icon + '</div>'
+      + '<div class="agent-card-title">'
+      + '<div class="agent-card-role">' + escHtml(rm.label) + ' <span class="agent-card-badge ' + typeClass + '">' + badgeLabel + '</span></div>'
+      + '</div>';
+
+    if (duration) {
+      html += '<div class="agent-card-duration">\u23f1 ' + duration + '</div>';
+    }
+    html += '</div>';
+
+    // Task / question body
+    if (taskText) {
+      html += '<div class="agent-card-body">'
+        + '<div class="agent-card-task-label">' + (isAsk ? 'Question' : 'Task') + '</div>'
+        + '<div class="agent-card-task">' + escHtml(taskText)
+        + (contextText ? '<br><span style="color:var(--text-dim);font-size:11px;margin-top:4px;display:inline-block">Context: ' + escHtml(contextText.substring(0, 120)) + (contextText.length > 120 ? '...' : '') + '</span>' : '')
+        + '</div></div>';
+    }
+
+    // Footer
+    const footerItems = [];
+    if (iterations) footerItems.push('\u{1f504} ' + iterations);
+    if (rm.desc) footerItems.push(rm.desc);
+    if (footerItems.length) {
+      html += '<div class="agent-card-footer"><span>' + footerItems.join('</span><span style="color:var(--border);margin:0 2px">\u00b7</span><span>') + '</span></div>';
+    }
+
+    // Error message
+    if (isFailed && tr.error) {
+      html += '<div class="agent-card-error">\u26a0\ufe0f ' + escHtml(tr.error) + '</div>';
+    }
+
+    html += '</div>';
+    return html;
+  }
 
   // --- Markdown renderer ---
   function renderMd(text){
@@ -708,11 +864,20 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   }
   function removeTyping(){const el=document.getElementById('typingIndicator');if(el)el.remove()}
 
-  function setLoading(on){
+    function setLoading(on){
     isLoading=on;sendBtn.disabled=on;inputEl.disabled=on;
     const dot=document.getElementById('statusDot'),txt=document.getElementById('statusText');
     if(on){dot.className='status-dot thinking';txt.textContent='Thinking...'}
     else{dot.className='status-dot online';txt.textContent='Ready'}
+  }
+  function setStatusDelegating(roleName){
+    const txt=document.getElementById('statusText');
+    const rm=getRoleMeta(roleName);
+    txt.textContent=rm.icon+' Delegating to '+rm.label+'...';
+  }
+  function setStatusReady(){
+    const txt=document.getElementById('statusText');
+    txt.textContent='Ready';
   }
 
   // --- API ---
@@ -752,6 +917,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       removeTyping();
       const reader=resp.body.getReader();const dec=new TextDecoder();
       let full='',confirmShown=false;
+      let agentCards=''; // accumulated agent delegation cards HTML
       let bubble=addMessage('assistant','');
       const bContent=bubble.querySelector('.md');
 
@@ -765,7 +931,25 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
             const p=JSON.parse(data);
             if(p.tool_result){
               const tr=p.tool_result;
-              if(tr.metadata&&tr.metadata.needs_confirmation&&tr.metadata.command){
+              // --- Agent delegation cards ---
+              if(tr.tool_name==='delegate_to_agent'||tr.tool_name==='ask_agent'){
+                // Update status bar with active role
+                const dRole=tr.metadata?.delegated_to||tr.metadata?.asked||tr.tool_args?.role;
+                if(dRole)setStatusDelegating(dRole);
+                agentCards+=renderAgentCard(tr);
+                if(tr.success){
+                  full+='\n\n\u2705 Task '+(tr.tool_name==='ask_agent'?'consulted with':'delegated to')+' '+(tr.metadata?.delegated_to||tr.metadata?.asked||'agent');
+                }else{
+                  full+='\n\n\u26a0\ufe0f Delegation failed: '+(tr.error||'unknown error');
+                }
+                // Re-render with cards preserved above markdown text
+                if(confirmShown){
+                  const card=bContent.querySelector('.confirm-card');
+                  bContent.innerHTML=agentCards+renderMd(full)+(card?card.outerHTML:'');
+                }else{bContent.innerHTML=agentCards+renderMd(full)}
+              }
+              // --- Confirm card ---
+              else if(tr.metadata&&tr.metadata.needs_confirmation&&tr.metadata.command){
                 bContent.innerHTML=(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
                 confirmShown=true;
               }else if(tr.metadata&&tr.metadata.send_file){
@@ -950,11 +1134,12 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   window.switchTab=function(tab,btn){
     document.querySelectorAll('.panel-tab').forEach(t=>t.classList.remove('active'));
     btn.classList.add('active');
-    ['model','channels','skills','agent'].forEach(t=>{
+    ['model','channels','skills','roles','agent'].forEach(t=>{
       const el=document.getElementById('tab-'+t);
       if(el)el.style.display=t===tab?'':'none';
     });
     if(tab==='skills')loadSkills();
+    if(tab==='roles')loadRoles();
   };
 
   async function loadConfig(){
@@ -1105,6 +1290,43 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       document.getElementById('tab-skills').innerHTML=html;
     }catch(e){
       document.getElementById('tab-skills').innerHTML='<p style="color:var(--text-dim)">Error loading skills.</p>';
+    }
+  }
+
+  // --- Roles tab ---
+  async function loadRoles(){
+    const tabEl=document.getElementById('tab-roles');
+    tabEl.innerHTML='<p style="color:var(--text-dim)">Loading roles...</p>';
+    try{
+      const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
+      const r=await fetch('/api/roles',{headers:h});
+      if(!r.ok){tabEl.innerHTML='<p style="color:var(--text-dim)">Failed to load roles.</p>';return}
+      const data=await r.json();
+      const roles=data.roles||[];
+      if(!roles.length){
+        tabEl.innerHTML='<div class="file-panel-empty">No agent roles discovered.<br>Roles are auto-loaded from:<br>~/.phoenix/roles/ and ./roles/<br><br>Add YAML files to define specialist agents.</div>';
+        return;
+      }
+      let html='<p style="font-size:12px;color:var(--text-dim);margin-bottom:4px">'+roles.length+' agent role(s) available</p>'
+        +'<p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Phoenix delegates tasks to these specialist agents via Supervisor mode</p>';
+      roles.forEach(role=>{
+        const rm=getRoleMeta(role.name);
+        const toolList=(role.tools||[]).map(t=>'<span class="skill-tag">'+escHtml(t)+'</span>').join('');
+        html+='<div class="channel-card" style="border-left:3px solid '+rm.color+'">'
+          +'<div class="channel-card-header">'
+          +'<div class="channel-card-name" style="gap:8px"><span style="font-size:18px">'+rm.icon+'</span>'+escHtml(rm.label)+'</div>'
+          +(role.model?'<span class="skill-card-ver" style="font-size:10px">'+escHtml(role.model)+'</span>':'')
+          +'</div>'
+          +'<div class="skill-card-desc" style="margin-bottom:8px">'+escHtml(role.description||rm.desc)+'</div>'
+          +(toolList?'<div class="skill-card-triggers" style="margin-bottom:6px">'+toolList+'</div>':'')
+          +'<div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim)">'
+          +(role.max_iterations?'<span>\u{1f504} Max '+role.max_iterations+' iterations</span>':'')
+          +(role.temperature!=null?'<span>\u{1f321}\ufe0f temp '+role.temperature+'</span>':'')
+          +'</div></div>';
+      });
+      tabEl.innerHTML=html;
+    }catch(e){
+      tabEl.innerHTML='<p style="color:var(--text-dim)">Error loading roles.</p>';
     }
   }
 
