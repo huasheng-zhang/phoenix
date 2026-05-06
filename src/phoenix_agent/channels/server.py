@@ -207,20 +207,22 @@ def build_app(
             cfg.channels.host, cfg.channels.port,
         )
 
+    # --- Web UI (inline routes, no sub-app mount) ---
+    # Insert BEFORE webhook Mount routes so "/" is matched first.
+    # (Mount("/") from webhook channels would otherwise swallow all requests.)
+    try:
+        from phoenix_agent.web.routes import build_web_routes
+        web_ui_routes = build_web_routes(pool=pool, config=cfg)
+        http_routes[0:0] = web_ui_routes  # prepend before webhook mounts
+        logger.info("Web UI routes registered")
+    except Exception as exc:
+        logger.warning("Failed to mount Web UI: %s", exc)
+
     # --- Health-check route ---
     async def _health(request: Request):
         return JSONResponse({"status": "ok", "service": "phoenix-agent"})
 
     http_routes.insert(0, Route("/health", endpoint=_health))
-
-    # --- Web UI (inline routes, no sub-app mount) ---
-    try:
-        from phoenix_agent.web.routes import build_web_routes
-        web_ui_routes = build_web_routes(pool=pool, config=cfg)
-        http_routes.extend(web_ui_routes)
-        logger.info("Web UI routes registered")
-    except Exception as exc:
-        logger.warning("Failed to mount Web UI: %s", exc)
 
     app = Starlette(routes=http_routes)
 
