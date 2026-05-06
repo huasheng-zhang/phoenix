@@ -313,56 +313,54 @@ skills:
 # ============================================================================
 # Multi-Agent Collaboration (Supervisor + Worker Roles)
 # ============================================================================
-# Define specialist agent roles that the main agent can delegate tasks to.
-# Roles are also auto-discovered from YAML files in:
-#   ~/.phoenix/roles/       (user-level, all projects)
-#   ./roles/                (project-level, current directory)
+# The main Phoenix Agent acts as a Supervisor that can delegate tasks to
+# specialist worker agents. Each worker has its own system prompt, tool set,
+# model, and iteration limits.
 #
-# Each role file is a YAML with: name, system_prompt, tools, model, etc.
+# Role discovery (priority: config.yaml overrides YAML files for same name):
+#   1. ~/.phoenix/roles/*.yaml   (user-level, shared across all projects)
+#   2. ./roles/*.yaml            (project-level, current directory)
+#   3. agent_roles section below (inline in config.yaml)
 #
-# The main agent can use these tools for delegation:
+# The main agent uses these tools for delegation:
 #   list_agent_roles       — List available specialist roles
-#   delegate_to_agent      — Delegate a task to a specialist (with tool use)
-#   ask_agent              — Ask a specialist a quick question (no tool use)
+#   delegate_to_agent      — Delegate a full task to a specialist (with tool use)
+#   ask_agent              — Quick consultation without tool iteration
+#
+# Built-in role files (included in ./roles/):
+#   researcher.yaml  — Web search, information gathering, fact verification
+#   coder.yaml       — Write, debug, and refactor code
+#   reviewer.yaml    — Code review: correctness, security, performance, style
+#   writer.yaml      — Technical docs, README, guides, blog posts
+#   analyst.yaml     — Log analysis, metrics, trend identification
+#   devops.yaml      — Server administration, deployment, CI/CD, monitoring
+#   translator.yaml  — Translation (中/英/日), localization, UI strings
+#   summarizer.yaml  — Condense long content into structured summaries
+#   tester.yaml      — Write, run, and debug test suites
+#   planner.yaml     — Architecture design, task decomposition, tech strategy
+#
+# To create a custom role, add a YAML file to ./roles/ or ~/.phoenix/roles/:
+#   name: my-role
+#   description: "What this role does"
+#   system_prompt: |
+#     You are a specialist that...
+#   tools: [read_file, run_command, ...]
+#   model: null           # null = use default model from provider config
+#   max_iterations: 20   # null = use agent default
+#   temperature: 0.3     # null = use agent default
 # ============================================================================
+
+# Uncomment below to define roles inline (or just use the YAML files in ./roles/):
 # agent_roles:
-#   researcher:
-#     description: "Research specialist for web search and information gathering"
+#   my-custom-role:
+#     description: "A custom specialist for my specific use case"
 #     system_prompt: |
-#       You are a research specialist. Your job is to find, verify, and
-#       summarize information from web sources. Always cite your sources
-#       and distinguish facts from opinions.
-#     tools:
-#       - web_search
-#       - web_fetch
-#       - read_file
-#     model: null  # use default model
-#
-#   coder:
-#     description: "Expert programmer for writing and debugging code"
-#     system_prompt: |
-#       You are an expert programmer. Write clean, well-tested code.
-#       Follow best practices and include error handling. When fixing
-#       bugs, explain the root cause and why your fix works.
+#       You are a specialist that handles...
 #     tools:
 #       - read_file
-#       - write_file
-#       - edit_file
 #       - run_command
-#       - grep
-#       - glob_files
-#     max_iterations: 30
-#
-#   reviewer:
-#     description: "Code reviewer for quality analysis"
-#     system_prompt: |
-#       You are a code reviewer. Analyze code for bugs, security issues,
-#       style problems, and performance concerns. Provide specific,
-#       actionable feedback with line references.
-#     tools:
-#       - read_file
-#       - grep
-#       - glob_files
 #     model: null
+#     max_iterations: 15
+#     temperature: 0.3
 
 
