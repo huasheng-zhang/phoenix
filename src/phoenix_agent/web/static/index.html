@@ -1301,7 +1301,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     if (typeof customAgents !== 'undefined' && Array.isArray(customAgents)) {
       customAgents.forEach(a => {
         if (!roles.find(r => r.name === a.name)) {
-          roles.push({name: a.name, icon: '\u{1f916}', desc: 'Custom agent'});
+          roles.push({name: a.name, icon: '\u{1f916}', desc: a.description || 'Custom agent'});
         }
       });
     }
@@ -1392,7 +1392,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 
     // Find @ before cursor
     const textBefore = val.substring(0, cursorPos);
-    const atMatch = textBefore.match(/@(\w*)$/);
+    const atMatch = textBefore.match(/@([\w-]*)$/);
 
     if (atMatch) {
       showMentionDropdown(panelIdx, atMatch[1], cursorPos - atMatch[0].length);
@@ -2144,6 +2144,9 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       customAgents=data.agents||[];
     }catch(e){}
   }
+
+  // Pre-load custom agents on page init so @mention autocomplete includes them
+  loadAgents();
 
   window.toggleAgentDropdown=function(idx){
     if(idx===undefined)idx=0;

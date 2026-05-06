@@ -75,7 +75,7 @@ def build_web_routes(pool, config=None) -> list:
     import re
 
     # --- @mention utility ---
-    _MENTION_RE = re.compile(r'@(\w+)\s+([\s\S]*)')
+    _MENTION_RE = re.compile(r'@([\w-]+)\s+([\s\S]*)')
 
     def _parse_mentions(message: str) -> list:
         """
@@ -245,6 +245,63 @@ def build_web_routes(pool, config=None) -> list:
             agent.max_iterations = ca["max_iterations"]
         return ca
 
+    def _delegate_to_custom_agent(role_name: str, task: str, context: str = ""):
+        """Create a temporary agent from custom agent config and run a task.
+        Returns a dict with {success, content, error, duration_ms, iterations}
+        or None if the custom agent is not found."""
+        _load_custom_agents()
+        ca = _custom_agents.get(role_name)
+        if not ca:
+            return None
+
+        from phoenix_agent.core.agents.orchestrator import DelegationResult
+        from phoenix_agent.core.agent import Agent
+
+        start = time.time()
+        try:
+            # Build a role-specific system prompt
+            delegation_header = (
+                f"# Role: {role_name}\n\n"
+                f"You are a specialist agent with the role of '{role_name}'. "
+                f"You have been delegated a task by a supervisor agent. "
+                f"Focus on completing the specific task assigned to you. "
+                f"Provide a clear, concise result.\n\n"
+            )
+            full_prompt = delegation_header + ca.get("system_prompt", "")
+
+            worker = Agent(config=cfg, system_prompt=full_prompt)
+            if ca.get("max_iterations") is not None:
+                worker.max_iterations = ca["max_iterations"]
+            if ca.get("temperature") is not None:
+                worker.config.agent.temperature = ca["temperature"]
+            if pool.memory:
+                worker.memory = pool.memory
+
+            full_task = task
+            if context:
+                full_task = f"[Context from supervisor]: {context}\n\n[Task]: {task}"
+
+            response = worker.run(full_task, stream=False)
+            duration = int((time.time() - start) * 1000)
+
+            return DelegationResult(
+                success=True,
+                content=response,
+                role=role_name,
+                duration_ms=duration,
+                iterations=worker.iteration_count,
+            )
+        except Exception as exc:
+            duration = int((time.time() - start) * 1000)
+            logger.exception("Custom agent delegation failed for %s", role_name)
+            return DelegationResult(
+                success=False,
+                content="",
+                role=role_name,
+                duration_ms=duration,
+                error=str(exc),
+            )
+
     async def _serve_index(request: Request):
         """Serve the SPA HTML page."""
         index = _STATIC_DIR / "index.html"
@@ -362,6 +419,7 @@ def build_web_routes(pool, config=None) -> list:
         async def _event_stream():
             """Generate SSE events from the agent response."""
             try:
+                from phoenix_agent.core.agents.orchestrator import DelegationResult
                 loop = asyncio.get_event_loop()
 
                 # We run the agent in a thread and stream chunks via a queue
@@ -377,19 +435,43 @@ def build_web_routes(pool, config=None) -> list:
 
                 # --- Handle @mention delegations BEFORE the main agent ---
                 mention_results = []
-                if mentions and pool.orchestrator:
+                if mentions:
                     for role_name, task_text in mentions:
                         # Notify frontend about mention delegation starting
                         result_queue.put(("mention_start", {
                             "role": role_name,
                             "task": task_text[:200],
                         }))
-                        # Delegate to the mentioned role via orchestrator
-                        deleg_result = pool.orchestrator.delegate(
-                            role_name=role_name,
-                            task=task_text,
-                            context=f"User mentioned @{role_name} in main chat",
-                        )
+
+                        # Try orchestrator first (built-in roles)
+                        deleg_result = None
+                        if pool.orchestrator:
+                            deleg_result = pool.orchestrator.delegate(
+                                role_name=role_name,
+                                task=task_text,
+                                context=f"User mentioned @{role_name} in main chat",
+                            )
+                            # If orchestrator doesn't know the role, try custom agents
+                            if not deleg_result.success and "Unknown role" in (deleg_result.error or ""):
+                                deleg_result = None
+
+                        # Fallback: try custom agents
+                        if deleg_result is None or not deleg_result.success:
+                            custom_result = _delegate_to_custom_agent(
+                                role_name=role_name,
+                                task=task_text,
+                                context=f"User mentioned @{role_name} in main chat",
+                            )
+                            if custom_result is not None:
+                                deleg_result = custom_result
+
+                        if deleg_result is None:
+                            deleg_result = DelegationResult(
+                                success=False, content="", role=role_name,
+                                error=f"Unknown agent @{role_name}. Not found in built-in roles or custom agents.",
+                                duration_ms=0, iterations=0,
+                            )
+
                         mention_results.append(deleg_result)
                         # Push result as SSE event
                         result_queue.put(("mention_result", {
@@ -399,18 +481,6 @@ def build_web_routes(pool, config=None) -> list:
                             "error": deleg_result.error,
                             "duration_ms": deleg_result.duration_ms,
                             "iterations": deleg_result.iterations,
-                        }))
-                elif mentions and not pool.orchestrator:
-                    # No orchestrator available — inform the user
-                    for role_name, task_text in mentions:
-                        result_queue.put(("mention_result", {
-                            "role": role_name,
-                            "success": False,
-                            "content": "",
-                            "error": f"No orchestrator available for @{role_name}. "
-                                    "Check that agent_roles are configured.",
-                            "duration_ms": 0,
-                            "iterations": 0,
                         }))
 
                 def _on_tool_result(tool_name, tool_args, tool_result):
@@ -1098,44 +1168,56 @@ def build_web_routes(pool, config=None) -> list:
                 def _run_delegation():
                     try:
                         from phoenix_agent.tools.builtin import get_orchestrator
+
+                        # Try orchestrator first (built-in roles)
+                        deleg_result = None
                         orchestrator = get_orchestrator()
+                        if orchestrator:
+                            role = orchestrator.get_role(role_name)
+                            if role:
+                                result_queue.put(("delegate_start", {
+                                    "role": role_name,
+                                    "task": task,
+                                    "description": role.description or "",
+                                }))
+                                deleg_result = orchestrator.delegate(
+                                    role_name=role_name,
+                                    task=task,
+                                    context=context,
+                                )
 
-                        if not orchestrator:
-                            result_queue.put(("error", "Multi-agent collaboration not enabled. No orchestrator available."))
+                        # Fallback: try custom agents
+                        if deleg_result is None:
+                            _load_custom_agents()
+                            ca = _custom_agents.get(role_name)
+                            if ca:
+                                result_queue.put(("delegate_start", {
+                                    "role": role_name,
+                                    "task": task,
+                                    "description": ca.get("description", ""),
+                                }))
+                                deleg_result = _delegate_to_custom_agent(
+                                    role_name=role_name,
+                                    task=task,
+                                    context=context,
+                                )
+
+                        if deleg_result is None:
+                            result_queue.put(("error", f"Unknown agent '{role_name}'. Not found in built-in roles or custom agents."))
                             return
 
-                        # Check role exists
-                        role = orchestrator.get_role(role_name)
-                        if not role:
-                            available = [r.name for r in orchestrator._roles.values()]
-                            result_queue.put(("error", f"Unknown role '{role_name}'. Available: {', '.join(available) or '(none)'}"))
-                            return
-
-                        # Send delegation start event
-                        result_queue.put(("delegate_start", {
-                            "role": role_name,
-                            "task": task,
-                            "description": role.description or "",
-                        }))
-
-                        result = orchestrator.delegate(
-                            role_name=role_name,
-                            task=task,
-                            context=context,
-                        )
-
-                        if result.success:
+                        if deleg_result.success:
                             result_queue.put(("delegate_result", {
-                                "role": result.role,
-                                "content": result.content,
-                                "duration_ms": result.duration_ms,
-                                "iterations": result.iterations,
+                                "role": deleg_result.role,
+                                "content": deleg_result.content,
+                                "duration_ms": deleg_result.duration_ms,
+                                "iterations": deleg_result.iterations,
                             }))
                         else:
                             result_queue.put(("delegate_error", {
-                                "role": result.role,
-                                "error": result.error,
-                                "duration_ms": result.duration_ms,
+                                "role": deleg_result.role,
+                                "error": deleg_result.error,
+                                "duration_ms": deleg_result.duration_ms,
                             }))
 
                     except Exception as exc:
