@@ -412,6 +412,189 @@ def build_web_routes(pool, config=None) -> list:
             },
         )
 
+    async def _api_collaborate(request: Request):
+        """POST /api/chat/collaborate — SSE endpoint for two agents discussing a topic.
+
+        Request body:
+            agent_a: str  — name of first custom agent (or empty for default)
+            agent_b: str  — name of second custom agent (or empty for default)
+            topic: str    — discussion topic / initial prompt
+            max_rounds: int — max exchange rounds (default 5)
+        """
+        if not await _check_auth(request):
+            return PlainTextResponse("Unauthorized", status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return PlainTextResponse("Invalid JSON", status_code=400)
+
+        agent_a_name = body.get("agent_a", "").strip()
+        agent_b_name = body.get("agent_b", "").strip()
+        topic = body.get("topic", "").strip()
+        max_rounds = min(int(body.get("max_rounds", 5)), 20)
+
+        if not topic:
+            return PlainTextResponse("topic is required", status_code=400)
+
+        async def _event_stream():
+            try:
+                import queue as _queue
+                import threading
+
+                result_queue = _queue.Queue()
+                done_event = threading.Event()
+
+                # Use stop event to allow client cancellation
+                stop_event = threading.Event()
+
+                def _run_collaboration():
+                    try:
+                        _load_custom_agents()
+
+                        # Create two fresh agent instances for the collaboration
+                        from phoenix_agent.core.agent import Agent
+
+                        agent_a = Agent(config=cfg)
+                        agent_b = Agent(config=cfg)
+
+                        # Apply custom agent configs if specified
+                        if agent_a_name:
+                            _apply_custom_agent(agent_a, agent_a_name)
+                        if agent_b_name:
+                            _apply_custom_agent(agent_b, agent_b_name)
+
+                        # Share memory if available
+                        if pool.memory:
+                            agent_a.memory = pool.memory
+                            agent_b.memory = pool.memory
+
+                        # Build per-agent system prompts with collaboration context
+                        label_a = agent_a_name or "Agent A"
+                        label_b = agent_b_name or "Agent B"
+
+                        collab_context_a = (
+                            f"\n\n# Collaboration Mode\n"
+                            f"You are '{label_a}' in a discussion with '{label_b}'.\n"
+                            f"You will receive messages from {label_b}. Respond naturally as your character.\n"
+                            f"Be concise and focused. Do not repeat what {label_b} already said.\n"
+                            f"When you have nothing new to add, say 'I agree' or similar.\n"
+                        )
+                        collab_context_b = (
+                            f"\n\n# Collaboration Mode\n"
+                            f"You are '{label_b}' in a discussion with '{label_a}'.\n"
+                            f"You will receive messages from {label_a}. Respond naturally as your character.\n"
+                            f"Be concise and focused. Do not repeat what {label_a} already said.\n"
+                            f"When you have nothing new to add, say 'I agree' or similar.\n"
+                        )
+                        agent_a.system_prompt = agent_a.system_prompt + collab_context_a
+                        agent_b.system_prompt = agent_b.system_prompt + collab_context_b
+
+                        # Send initial info
+                        result_queue.put(("collab_start", {
+                            "agent_a": label_a,
+                            "agent_b": label_b,
+                            "topic": topic,
+                            "max_rounds": max_rounds,
+                        }))
+
+                        # Agent A starts with the topic
+                        current_speaker = "a"
+                        current_prompt = topic
+                        exchange_count = 0
+
+                        while exchange_count < max_rounds and not stop_event.is_set():
+                            if current_speaker == "a":
+                                speaker_agent = agent_a
+                                speaker_name = label_a
+                                next_speaker = "b"
+                            else:
+                                speaker_agent = agent_b
+                                speaker_name = label_b
+                                next_speaker = "a"
+
+                            result_queue.put(("collab_thinking", {
+                                "speaker": speaker_name,
+                                "round": exchange_count + 1,
+                            }))
+
+                            try:
+                                response = speaker_agent.run(current_prompt)
+                            except Exception as exc:
+                                result_queue.put(("collab_error", {
+                                    "speaker": speaker_name,
+                                    "error": str(exc),
+                                }))
+                                break
+
+                            # Send the response
+                            result_queue.put(("collab_message", {
+                                "speaker": speaker_name,
+                                "round": exchange_count + 1,
+                                "content": response or "(no response)",
+                            }))
+
+                            # Check for early termination
+                            if not response or response.strip().lower() in (
+                                "i agree", "agreed", "同意", "没问题", " concur",
+                            ):
+                                break
+
+                            # Pass response to the other agent
+                            current_prompt = (
+                                f"[From {speaker_name}]: {response}\n\n"
+                                f"Respond to the above."
+                            )
+                            current_speaker = next_speaker
+                            exchange_count += 1
+
+                        result_queue.put(("collab_end", {"total_rounds": exchange_count}))
+
+                    except Exception as exc:
+                        logger.exception("[web] Error in collaboration")
+                        result_queue.put(("collab_error", {"speaker": "system", "error": str(exc)}))
+                    finally:
+                        done_event.set()
+                        result_queue.put(("done", ""))
+
+                thread = threading.Thread(target=_run_collaboration, daemon=True)
+                thread.start()
+
+                while not done_event.is_set() or not result_queue.empty():
+                    try:
+                        msg_type, msg_data = result_queue.get(timeout=0.1)
+                        if msg_type == "collab_start":
+                            yield f"data: {json.dumps({'collab_start': msg_data})}\n\n"
+                        elif msg_type == "collab_thinking":
+                            yield f"data: {json.dumps({'collab_thinking': msg_data})}\n\n"
+                        elif msg_type == "collab_message":
+                            yield f"data: {json.dumps({'collab_message': msg_data})}\n\n"
+                        elif msg_type == "collab_error":
+                            yield f"data: {json.dumps({'collab_error': msg_data})}\n\n"
+                        elif msg_type == "collab_end":
+                            yield f"data: {json.dumps({'collab_end': msg_data})}\n\n"
+                        elif msg_type == "done":
+                            yield "data: [DONE]\n\n"
+                    except _queue.Empty:
+                        continue
+
+                thread.join(timeout=5)
+
+            except Exception as exc:
+                logger.exception("[web] Error in collaborate SSE stream")
+                yield f"data: {json.dumps({'error': 'Internal error'})}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            _event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     async def _api_session_new(request: Request):
         """POST /api/session/new — create a new session (reset context)."""
         if not await _check_auth(request):
@@ -794,6 +977,7 @@ def build_web_routes(pool, config=None) -> list:
         Route("/", endpoint=_serve_index, methods=["GET"]),
         Route("/api/chat", endpoint=_api_chat, methods=["POST"]),
         Route("/api/chat/stream", endpoint=_api_chat_stream, methods=["POST"]),
+        Route("/api/chat/collaborate", endpoint=_api_collaborate, methods=["POST"]),
         Route("/api/session/new", endpoint=_api_session_new, methods=["POST"]),
         Route("/api/history", endpoint=_api_history, methods=["GET"]),
         Route("/api/sessions", endpoint=_api_sessions, methods=["GET"]),
