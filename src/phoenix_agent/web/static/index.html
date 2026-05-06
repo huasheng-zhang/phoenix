@@ -412,7 +412,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 .agent-card{
   background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
   padding:0;margin:10px 0;overflow:hidden;border-left:3px solid var(--accent);
-  animation:fadeIn .3s ease;
+  animation:fadeIn .3s ease;max-height:50vh;overflow-y:auto;
 }
 .agent-card.delegate{border-left-color:var(--accent)}
 .agent-card.ask{border-left-color:var(--warning)}
@@ -503,7 +503,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 .mention-card{
   background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
   padding:0;margin:8px 0;overflow:hidden;border-left:3px solid #8b5cf6;
-  animation:fadeIn .3s ease;
+  animation:fadeIn .3s ease;max-height:50vh;overflow-y:auto;
 }
 .mention-card.processing{border-left-color:var(--warning)}
 .mention-card.success{border-left-color:var(--success)}
