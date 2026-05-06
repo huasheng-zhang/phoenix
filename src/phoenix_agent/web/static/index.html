@@ -207,7 +207,7 @@ a{color:var(--accent);text-decoration:none}
 /* === INPUT AREA === */
 .input-area{
   padding:12px 24px 16px;border-top:1px solid var(--border);
-  background:var(--surface);flex-shrink:0;
+  background:var(--surface);flex-shrink:0;overflow:visible;
 }
 .attachment-preview{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 8px}
 .file-attachment{
@@ -222,7 +222,7 @@ a{color:var(--accent);text-decoration:none}
 .file-attachment .file-remove{cursor:pointer;color:var(--text-dim);font-size:13px;padding:0 2px;transition:color .15s}
 .file-attachment .file-remove:hover{color:var(--danger)}
 .file-attachment img.file-thumb{width:28px;height:28px;object-fit:cover;border-radius:4px;flex-shrink:0}
-.input-wrapper{display:flex;gap:8px;align-items:flex-end}
+.input-wrapper{display:flex;gap:8px;align-items:flex-end;position:relative}
 .input-wrapper textarea{
   flex:1;resize:none;border:1px solid var(--border);border-radius:var(--radius);
   background:var(--bg);color:var(--text);padding:10px 14px;font-size:14px;
