@@ -89,6 +89,120 @@ def build_web_routes(pool, config=None) -> list:
     _sessions: Dict[str, str] = {}  # session_id -> pool key
     _session_counter = 0
 
+    # --- Custom agents store ---
+    # name -> {name, system_prompt, temperature, max_iterations, ...}
+    _custom_agents: Dict[str, Dict[str, Any]] = {}
+    _custom_agents_loaded = False
+
+    def _load_custom_agents():
+        """Load custom agents from ~/.phoenix/agents/*.yaml and config.yaml custom_agents section."""
+        nonlocal _custom_agents_loaded, _custom_agents
+        if _custom_agents_loaded:
+            return
+        _custom_agents_loaded = True
+
+        import yaml as _yaml
+        from pathlib import Path as _Path
+        import os as _os
+
+        agents_map: Dict[str, Dict[str, Any]] = {}
+
+        # 1. Load from ~/.phoenix/agents/*.yaml
+        phoenix_home = _Path(_os.environ.get("PHOENIX_HOME", _Path.home() / ".phoenix"))
+        agents_dir = phoenix_home / "agents"
+        if agents_dir.is_dir():
+            for child in sorted(agents_dir.iterdir()):
+                if not child.is_file() or child.suffix not in (".yaml", ".yml"):
+                    continue
+                if child.name.startswith(".") or child.name.startswith("_"):
+                    continue
+                try:
+                    data = _yaml.safe_load(child.read_text(encoding="utf-8")) or {}
+                except Exception as exc:
+                    logger.warning("Failed to parse agent file %s: %s", child, exc)
+                    continue
+                name = data.get("name", child.stem)
+                if not data.get("system_prompt"):
+                    continue
+                agents_map[name] = {
+                    "name": name,
+                    "system_prompt": data.get("system_prompt", ""),
+                    "temperature": data.get("temperature"),
+                    "max_iterations": data.get("max_iterations"),
+                    "model": data.get("model"),
+                    "description": data.get("description", ""),
+                    "source": str(child),
+                }
+
+        # 2. Load from config.yaml custom_agents section
+        if hasattr(cfg, "_file_config"):
+            ca_section = cfg._file_config.get("custom_agents", {})
+            if isinstance(ca_section, dict):
+                for name, data in ca_section.items():
+                    if not isinstance(data, dict):
+                        continue
+                    if not data.get("system_prompt"):
+                        continue
+                    agents_map[name] = {
+                        "name": name,
+                        "system_prompt": data.get("system_prompt", ""),
+                        "temperature": data.get("temperature"),
+                        "max_iterations": data.get("max_iterations"),
+                        "model": data.get("model"),
+                        "description": data.get("description", ""),
+                        "source": "config.yaml",
+                    }
+
+        _custom_agents = agents_map
+
+    def _save_custom_agent_to_file(name: str, agent_data: Dict[str, Any]) -> bool:
+        """Persist a custom agent to ~/.phoenix/agents/{name}.yaml."""
+        import yaml as _yaml
+        from pathlib import Path as _Path
+        import os as _os
+
+        try:
+            phoenix_home = _Path(_os.environ.get("PHOENIX_HOME", _Path.home() / ".phoenix"))
+            agents_dir = phoenix_home / "agents"
+            agents_dir.mkdir(parents=True, exist_ok=True)
+
+            file_data = {
+                "name": agent_data["name"],
+                "system_prompt": agent_data["system_prompt"],
+                "description": agent_data.get("description", ""),
+            }
+            if agent_data.get("temperature") is not None:
+                file_data["temperature"] = agent_data["temperature"]
+            if agent_data.get("max_iterations") is not None:
+                file_data["max_iterations"] = agent_data["max_iterations"]
+            if agent_data.get("model"):
+                file_data["model"] = agent_data["model"]
+
+            file_path = agents_dir / f"{name}.yaml"
+            file_path.write_text(
+                _yaml.safe_dump(file_data, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            return True
+        except Exception as exc:
+            logger.exception("Failed to save agent %s: %s", name, exc)
+            return False
+
+    def _delete_custom_agent_file(name: str) -> bool:
+        """Delete a custom agent YAML file."""
+        from pathlib import Path as _Path
+        import os as _os
+
+        try:
+            phoenix_home = _Path(_os.environ.get("PHOENIX_HOME", _Path.home() / ".phoenix"))
+            file_path = phoenix_home / "agents" / f"{name}.yaml"
+            if file_path.exists():
+                file_path.unlink()
+            return True
+        except Exception as exc:
+            logger.exception("Failed to delete agent %s: %s", name, exc)
+            return False
+
     def _new_session_id() -> str:
         nonlocal _session_counter
         _session_counter += 1
@@ -98,6 +212,21 @@ def build_web_routes(pool, config=None) -> list:
         return _sessions.get(session_id, session_id)
 
     # --- Routes ---
+
+    def _apply_custom_agent(agent, agent_name: str):
+        """Apply a custom agent's config overrides to the given agent instance.
+        Returns the custom agent data dict, or None if not found."""
+        _load_custom_agents()
+        ca = _custom_agents.get(agent_name)
+        if not ca:
+            return None
+        if ca.get("system_prompt"):
+            agent._system_prompt = ca["system_prompt"]
+        if ca.get("temperature") is not None:
+            agent.config.agent.temperature = ca["temperature"]
+        if ca.get("max_iterations") is not None:
+            agent.max_iterations = ca["max_iterations"]
+        return ca
 
     async def _serve_index(request: Request):
         """Serve the SPA HTML page."""
@@ -124,6 +253,7 @@ def build_web_routes(pool, config=None) -> list:
         message = body.get("message", "").strip()
         session_id = body.get("session_id", "")
         attachments = body.get("attachments", [])
+        agent_name = body.get("agent_name", "")
 
         if not message and not attachments:
             return JSONResponse({"error": "message or attachments required"}, status_code=400)
@@ -133,6 +263,10 @@ def build_web_routes(pool, config=None) -> list:
             _sessions[session_id] = pool_key
 
         agent = pool.get_agent("web", pool_key)
+
+        # Apply custom agent config if specified
+        if agent_name:
+            _apply_custom_agent(agent, agent_name)
 
         if attachments:
             file_lines = []
@@ -172,6 +306,7 @@ def build_web_routes(pool, config=None) -> list:
         message = body.get("message", "").strip()
         session_id = body.get("session_id", "")
         attachments = body.get("attachments", [])  # [{filename, file_path, file_type, size}]
+        agent_name = body.get("agent_name", "")
 
         if not message and not attachments:
             return PlainTextResponse("message or attachments required", status_code=400)
@@ -181,6 +316,13 @@ def build_web_routes(pool, config=None) -> list:
             _sessions[session_id] = pool_key
 
         agent = pool.get_agent("web", pool_key)
+
+        # Apply custom agent config if specified
+        active_agent_name = ""
+        if agent_name:
+            ca = _apply_custom_agent(agent, agent_name)
+            if ca:
+                active_agent_name = agent_name
 
         # Inject file info into message so LLM knows about attachments
         if attachments:
@@ -203,6 +345,10 @@ def build_web_routes(pool, config=None) -> list:
 
                 result_queue: queue.Queue = queue.Queue()
                 done_event = threading.Event()
+
+                # Send agent info as first event
+                if active_agent_name:
+                    result_queue.put(("agent_info", {"agent_name": active_agent_name}))
 
                 def _on_tool_result(tool_name, tool_args, tool_result):
                     """Callback: push tool results to the SSE queue so the
@@ -234,7 +380,9 @@ def build_web_routes(pool, config=None) -> list:
                 while not done_event.is_set() or not result_queue.empty():
                     try:
                         msg_type, msg_data = result_queue.get(timeout=0.1)
-                        if msg_type == "chunk":
+                        if msg_type == "agent_info":
+                            yield f"data: {json.dumps({'agent_info': msg_data})}\n\n"
+                        elif msg_type == "chunk":
                             # Send as JSON in SSE data field
                             yield f"data: {json.dumps({'content': msg_data})}\n\n"
                         elif msg_type == "tool_result":
@@ -569,6 +717,78 @@ def build_web_routes(pool, config=None) -> list:
             logger.exception("[web] Error listing roles")
             return JSONResponse({"error": str(exc)}, status_code=500)
 
+    # --- Custom agents API ---
+
+    async def _api_list_agents(request: Request):
+        """GET /api/agents — list all custom agents."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        _load_custom_agents()
+        agents = list(_custom_agents.values())
+        agents.sort(key=lambda a: a["name"])
+        return JSONResponse({"agents": agents, "count": len(agents)})
+
+    async def _api_create_agent(request: Request):
+        """POST /api/agents — create or update a custom agent."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        name = body.get("name", "").strip()
+        system_prompt = body.get("system_prompt", "").strip()
+        if not name:
+            return JSONResponse({"error": "name is required"}, status_code=400)
+        if not system_prompt:
+            return JSONResponse({"error": "system_prompt is required"}, status_code=400)
+
+        # Validate name: alphanumeric, dash, underscore
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+            return JSONResponse({"error": "name must be alphanumeric (letters, digits, -, _)"}, status_code=400)
+
+        agent_data = {
+            "name": name,
+            "system_prompt": system_prompt,
+            "description": body.get("description", ""),
+            "temperature": body.get("temperature"),
+            "max_iterations": body.get("max_iterations"),
+            "model": body.get("model"),
+        }
+
+        # Persist to file
+        if not _save_custom_agent_to_file(name, agent_data):
+            return JSONResponse({"error": "Failed to save agent file"}, status_code=500)
+
+        # Update in-memory cache
+        agent_data["source"] = "~/.phoenix/agents/"
+        _custom_agents[name] = agent_data
+
+        return JSONResponse({"message": f"Agent '{name}' saved", "agent": agent_data})
+
+    async def _api_delete_agent(request: Request):
+        """DELETE /api/agents/{name} — delete a custom agent."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        name = request.path_params.get("name", "").strip()
+        if not name:
+            return JSONResponse({"error": "name is required"}, status_code=400)
+
+        _load_custom_agents()
+        if name not in _custom_agents:
+            return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+
+        if not _delete_custom_agent_file(name):
+            return JSONResponse({"error": "Failed to delete agent file"}, status_code=500)
+
+        del _custom_agents[name]
+        return JSONResponse({"message": f"Agent '{name}' deleted"})
+
     # --- Routes ---
     routes = [
         Route("/", endpoint=_serve_index, methods=["GET"]),
@@ -584,6 +804,9 @@ def build_web_routes(pool, config=None) -> list:
         Route("/api/config", endpoint=_api_update_config, methods=["PUT"]),
         Route("/api/skills", endpoint=_api_list_skills, methods=["GET"]),
         Route("/api/roles", endpoint=_api_list_roles, methods=["GET"]),
+        Route("/api/agents", endpoint=_api_list_agents, methods=["GET"]),
+        Route("/api/agents", endpoint=_api_create_agent, methods=["POST"]),
+        Route("/api/agents/{name}", endpoint=_api_delete_agent, methods=["DELETE"]),
     ]
 
     return routes

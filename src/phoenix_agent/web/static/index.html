@@ -491,6 +491,92 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 .agent-card[data-role="planner"] .agent-card-avatar{background:rgba(167,139,250,.15)}
 
 /* === FILE PANEL === */
+
+/* === AGENT SELECTOR === */
+.agent-selector{
+  position:relative;display:inline-block;
+}
+.agent-selector-btn{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 10px;border:1px solid var(--border);border-radius:20px;
+  background:var(--surface2);color:var(--text);cursor:pointer;
+  font-size:12px;font-family:var(--font);transition:var(--transition);
+  max-width:180px;
+}
+.agent-selector-btn:hover{border-color:var(--accent);color:var(--accent)}
+.agent-selector-btn .as-icon{font-size:14px;flex-shrink:0}
+.agent-selector-btn .as-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-selector-btn .as-arrow{font-size:9px;color:var(--text-dim);margin-left:2px}
+.agent-selector-btn.active-agent{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+.agent-selector-dropdown{
+  position:absolute;top:calc(100% + 6px);left:0;min-width:240px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:100;display:none;
+  max-height:320px;overflow-y:auto;
+}
+.agent-selector-dropdown.open{display:block;animation:fadeIn .15s ease}
+.asd-header{
+  padding:10px 12px 6px;display:flex;justify-content:space-between;align-items:center;
+}
+.asd-header span{font-size:11px;color:var(--text-dim);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.asd-new{
+  font-size:11px;color:var(--accent);cursor:pointer;background:none;border:none;
+  font-family:var(--font);padding:2px 6px;border-radius:4px;transition:var(--transition);
+}
+.asd-new:hover{background:var(--accent-bg)}
+.asd-item{
+  padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+  font-size:13px;color:var(--text);transition:var(--transition);
+}
+.asd-item:hover{background:var(--surface2)}
+.asd-item.active{background:var(--accent-bg);color:var(--accent)}
+.asd-item .asd-icon{font-size:16px;flex-shrink:0;width:24px;text-align:center}
+.asd-item .asd-info{flex:1;min-width:0}
+.asd-item .asd-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asd-item .asd-desc{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.asd-default{padding:8px 12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim);cursor:pointer;transition:var(--transition)}
+.asd-default:hover{background:var(--surface2);color:var(--text)}
+.asd-empty{padding:20px 12px;text-align:center;color:var(--text-dim);font-size:12px}
+
+/* === AGENT CREATE MODAL === */
+.modal-overlay{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.55);z-index:200;display:none;
+  backdrop-filter:blur(3px);
+}
+.modal-overlay.open{display:flex;align-items:center;justify-content:center}
+.modal{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  width:520px;max-width:95vw;max-height:85vh;overflow-y:auto;
+  animation:fadeIn .2s ease;
+}
+.modal-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);
+}
+.modal-header h3{font-size:16px;color:var(--text-bright);font-weight:600}
+.modal-close{
+  background:none;border:none;color:var(--text-dim);font-size:22px;
+  cursor:pointer;padding:0 2px;line-height:1;transition:var(--transition);
+}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:20px}
+.modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+.modal-footer .btn-cancel{
+  padding:8px 16px;border:1px solid var(--border);border-radius:var(--radius-xs);
+  background:transparent;color:var(--text-dim);cursor:pointer;font-size:13px;
+  font-family:var(--font);transition:var(--transition);
+}
+.modal-footer .btn-cancel:hover{background:var(--surface2);color:var(--text)}
+.modal-footer .btn-create{
+  padding:8px 16px;border:none;border-radius:var(--radius-xs);
+  background:var(--accent);color:#fff;cursor:pointer;font-size:13px;
+  font-family:var(--font);font-weight:500;transition:var(--transition);
+}
+.modal-footer .btn-create:hover{background:var(--accent-hover)}
+.modal-footer .btn-create:disabled{opacity:.4;cursor:not-allowed}
+
+/* === FILE PANEL === */
 .file-panel-overlay{
   position:fixed;top:0;left:0;width:100%;height:100%;
   background:rgba(0,0,0,.45);z-index:50;display:none;
@@ -571,6 +657,21 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
         <button class="topbar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">&#9776;</button>
         <span class="topbar-title" id="topbarTitle" ondblclick="startRenameSession(sessionId,this)">New Chat</span>
         <span class="topbar-model" id="topbarModel"></span>
+        <!-- Agent selector -->
+        <div class="agent-selector" id="agentSelector">
+          <button class="agent-selector-btn" id="agentSelectorBtn" onclick="toggleAgentDropdown()">
+            <span class="as-icon">P</span>
+            <span class="as-name" id="agentSelectorName">Default</span>
+            <span class="as-arrow">&#9662;</span>
+          </button>
+          <div class="agent-selector-dropdown" id="agentDropdown">
+            <div class="asd-header">
+              <span>Agents</span>
+              <button class="asd-new" onclick="openAgentModal()">+ New</button>
+            </div>
+            <div id="agentDropdownList"></div>
+          </div>
+        </div>
       </div>
       <div class="topbar-right">
         <button class="topbar-btn" onclick="loadHistory()" title="Load history">&#128260;</button>
@@ -637,6 +738,53 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   </div>
 </div>
 
+<!-- Agent Create/Edit Modal -->
+<div class="modal-overlay" id="agentModalOverlay" onclick="closeAgentModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="agentModalTitle">&#129302; New Agent</h3>
+      <button class="modal-close" onclick="closeAgentModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+        <input class="form-input" id="agentFormName" placeholder="e.g. translator, coder, reviewer" maxlength="32">
+        <div class="form-hint">Alphanumeric, dash, underscore. Used as agent identifier.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input class="form-input" id="agentFormDesc" placeholder="Brief description of this agent's purpose" maxlength="120">
+      </div>
+      <div class="form-group">
+        <label class="form-label">System Prompt <span style="color:var(--danger)">*</span></label>
+        <textarea class="form-input" id="agentFormPrompt" rows="8" placeholder="You are a specialist agent that..."></textarea>
+        <div class="form-hint">Defines the agent's behavior, expertise, and response style.</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Temperature</label>
+          <input class="form-input" id="agentFormTemp" type="number" step="0.1" min="0" max="2" placeholder="0.7">
+          <div class="form-hint">Leave empty to use default.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max Iterations</label>
+          <input class="form-input" id="agentFormIter" type="number" min="1" max="100" placeholder="50">
+          <div class="form-hint">Leave empty to use default.</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Model Override</label>
+        <input class="form-input" id="agentFormModel" placeholder="e.g. gpt-4o, claude-sonnet-4">
+        <div class="form-hint">Optional. Override the default model for this agent.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeAgentModal()">Cancel</button>
+      <button class="btn-create" id="agentFormSubmit" onclick="saveAgentFromModal()">Create Agent</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   // --- State ---
@@ -644,6 +792,8 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   let isLoading = false;
   let pendingFiles = [];
   let currentConfig = null;
+  let currentAgentName = '';  // empty = default agent
+  let customAgents = [];      // cached list from /api/agents
   const messagesEl = document.getElementById('messages');
   const inputEl = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -910,6 +1060,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 
     try{
       const body={message:text,session_id:sessionId};
+      if(currentAgentName)body.agent_name=currentAgentName;
       if(attachments.length)body.attachments=attachments;
       const resp=await apiCall('/api/chat/stream',body);
       if(!resp.ok){removeTyping();const err=await resp.text();addMessage('assistant','Error: '+err);setLoading(false);return}
@@ -929,7 +1080,14 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
           const data=line.slice(6);if(data==='[DONE]')break;
           try{
             const p=JSON.parse(data);
-            if(p.tool_result){
+            if(p.agent_info){
+              // Server confirmed which agent is being used
+              const ai=p.agent_info;
+              if(ai.agent_name&&ai.agent_name!==currentAgentName){
+                selectAgent(ai.agent_name);
+              }
+            }
+            else if(p.tool_result){
               const tr=p.tool_result;
               // --- Agent delegation cards ---
               if(tr.tool_name==='delegate_to_agent'||tr.tool_name==='ask_agent'){
@@ -1072,6 +1230,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     const target=list.querySelector('[data-sid="'+id+'"]');
     if(target)target.classList.add('active');
     // Clear chat and load history for new session
+    restoreAgentForSession();
     messagesEl.innerHTML='';
     if(emptyState){messagesEl.appendChild(emptyState);emptyState.style.display='none'}
     try{
@@ -1330,6 +1489,152 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     }
   }
 
+  // --- Agent management ---
+
+  function getAuthHeaders(){
+    const h={};
+    const t=sessionStorage.getItem('phoenix_token');
+    if(t)h['Authorization']='Bearer '+t;
+    return h;
+  }
+
+  async function loadAgents(){
+    try{
+      const r=await fetch('/api/agents',{headers:getAuthHeaders()});
+      if(!r.ok)return;
+      const data=await r.json();
+      customAgents=data.agents||[];
+    }catch(e){}
+  }
+
+  window.toggleAgentDropdown=function(){
+    const dd=document.getElementById('agentDropdown');
+    if(dd.classList.contains('open')){
+      dd.classList.remove('open');
+    }else{
+      loadAgents().then(()=>{
+        renderAgentDropdown();
+        dd.classList.add('open');
+      });
+    }
+  };
+
+  function renderAgentDropdown(){
+    const list=document.getElementById('agentDropdownList');
+    if(!customAgents.length){
+      list.innerHTML='<div class="asd-empty">No custom agents yet.<br>Click <b>+ New</b> to create one.</div>'
+        +'<div class="asd-default'+(currentAgentName?'':' active')+'" onclick="selectAgent(\'\')">'
+        +'<span style="margin-right:6px">P</span> Default Agent</div>';
+      return;
+    }
+    let html='<div class="asd-default'+(currentAgentName?'':' active')+'" onclick="selectAgent(\'\')">'
+      +'<span style="margin-right:6px">P</span> Default Agent</div>';
+    customAgents.forEach(a=>{
+      const isActive=a.name===currentAgentName;
+      const rm=getRoleMeta(a.name);
+      html+='<div class="asd-item'+(isActive?' active':'')+'" onclick="selectAgent(\''+escHtml(a.name)+'\')">'
+        +'<div class="asd-icon">'+rm.icon+'</div>'
+        +'<div class="asd-info">'
+        +'<div class="asd-name">'+escHtml(a.name)+(isActive?' <span style="color:var(--accent);font-size:11px">&#10003;</span>':'')+'</div>'
+        +(a.description?'<div class="asd-desc">'+escHtml(a.description)+'</div>':'')
+        +'</div></div>';
+    });
+    list.innerHTML=html;
+  }
+
+  window.selectAgent=function(name){
+    currentAgentName=name;
+    const btn=document.getElementById('agentSelectorBtn');
+    const nameEl=document.getElementById('agentSelectorName');
+    if(name){
+      const rm=getRoleMeta(name);
+      btn.querySelector('.as-icon').textContent=rm.icon;
+      nameEl.textContent=rm.label;
+      btn.classList.add('active-agent');
+    }else{
+      btn.querySelector('.as-icon').textContent='P';
+      nameEl.textContent='Default';
+      btn.classList.remove('active-agent');
+    }
+    document.getElementById('agentDropdown').classList.remove('open');
+    // Remember per session
+    sessionStorage.setItem('phoenix_agent_'+sessionId,name||'');
+  };
+
+  // Close dropdown on outside click
+  document.addEventListener('click',function(e){
+    const sel=document.getElementById('agentSelector');
+    if(sel&&!sel.contains(e.target)){
+      document.getElementById('agentDropdown').classList.remove('open');
+    }
+  });
+
+  // --- Agent create/edit modal ---
+  let _editingAgentName='';
+
+  window.openAgentModal=function(){
+    _editingAgentName='';
+    document.getElementById('agentModalTitle').textContent='\u{1f916} New Agent';
+    document.getElementById('agentFormSubmit').textContent='Create Agent';
+    document.getElementById('agentFormName').value='';
+    document.getElementById('agentFormDesc').value='';
+    document.getElementById('agentFormPrompt').value='';
+    document.getElementById('agentFormTemp').value='';
+    document.getElementById('agentFormIter').value='';
+    document.getElementById('agentFormModel').value='';
+    document.getElementById('agentFormName').disabled=false;
+    document.getElementById('agentModalOverlay').classList.add('open');
+  };
+
+  window.closeAgentModal=function(){
+    document.getElementById('agentModalOverlay').classList.remove('open');
+  };
+
+  window.saveAgentFromModal=async function(){
+    const name=document.getElementById('agentFormName').value.trim();
+    const prompt=document.getElementById('agentFormPrompt').value.trim();
+    if(!name||!prompt){alert('Name and System Prompt are required.');return}
+    // Validate name
+    if(!/^[a-zA-Z0-9_-]+$/.test(name)){alert('Name must be alphanumeric (letters, digits, -, _)');return}
+
+    const data={
+      name:name,
+      system_prompt:prompt,
+      description:document.getElementById('agentFormDesc').value.trim(),
+      temperature:document.getElementById('agentFormTemp').value?parseFloat(document.getElementById('agentFormTemp').value):null,
+      max_iterations:document.getElementById('agentFormIter').value?parseInt(document.getElementById('agentFormIter').value):null,
+      model:document.getElementById('agentFormModel').value.trim()||null,
+    };
+
+    const submitBtn=document.getElementById('agentFormSubmit');
+    submitBtn.disabled=true;
+    submitBtn.textContent='Saving...';
+
+    try{
+      const r=await fetch('/api/agents',{
+        method:'POST',headers:{...getAuthHeaders(),'Content-Type':'application/json'},
+        body:JSON.stringify(data),
+      });
+      const result=await r.json();
+      if(!r.ok){alert('Save failed: '+(result.error||'Unknown error'));return}
+      // Reload and select the new agent
+      await loadAgents();
+      selectAgent(name);
+      closeAgentModal();
+    }catch(e){
+      alert('Save failed: '+e.message);
+    }finally{
+      submitBtn.disabled=false;
+      submitBtn.textContent=_editingAgentName?'Update Agent':'Create Agent';
+    }
+  };
+
+  // Restore agent selection from sessionStorage on init
+  function restoreAgentForSession(){
+    const saved=sessionStorage.getItem('phoenix_agent_'+sessionId);
+    if(saved)selectAgent(saved);
+  }
+
   // --- Save config functions ---
   window.saveProviderConfig=async function(){
     const data={
@@ -1431,6 +1736,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   // --- Init ---
   if(!sessionId){sessionId='web-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);sessionStorage.setItem('phoenix_session',sessionId)}
   restoreSessionList();
+  restoreAgentForSession();
 
   (async function(){
     try{
