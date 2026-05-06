@@ -310,3 +310,59 @@ skills:
 #   month:   1-12
 #   weekday: 0-6 (0=Sunday, 1=Monday, ..., 6=Saturday)
 
+# ============================================================================
+# Multi-Agent Collaboration (Supervisor + Worker Roles)
+# ============================================================================
+# Define specialist agent roles that the main agent can delegate tasks to.
+# Roles are also auto-discovered from YAML files in:
+#   ~/.phoenix/roles/       (user-level, all projects)
+#   ./roles/                (project-level, current directory)
+#
+# Each role file is a YAML with: name, system_prompt, tools, model, etc.
+#
+# The main agent can use these tools for delegation:
+#   list_agent_roles       — List available specialist roles
+#   delegate_to_agent      — Delegate a task to a specialist (with tool use)
+#   ask_agent              — Ask a specialist a quick question (no tool use)
+# ============================================================================
+# agent_roles:
+#   researcher:
+#     description: "Research specialist for web search and information gathering"
+#     system_prompt: |
+#       You are a research specialist. Your job is to find, verify, and
+#       summarize information from web sources. Always cite your sources
+#       and distinguish facts from opinions.
+#     tools:
+#       - web_search
+#       - web_fetch
+#       - read_file
+#     model: null  # use default model
+#
+#   coder:
+#     description: "Expert programmer for writing and debugging code"
+#     system_prompt: |
+#       You are an expert programmer. Write clean, well-tested code.
+#       Follow best practices and include error handling. When fixing
+#       bugs, explain the root cause and why your fix works.
+#     tools:
+#       - read_file
+#       - write_file
+#       - edit_file
+#       - run_command
+#       - grep
+#       - glob_files
+#     max_iterations: 30
+#
+#   reviewer:
+#     description: "Code reviewer for quality analysis"
+#     system_prompt: |
+#       You are a code reviewer. Analyze code for bugs, security issues,
+#       style problems, and performance concerns. Provide specific,
+#       actionable feedback with line references.
+#     tools:
+#       - read_file
+#       - grep
+#       - glob_files
+#     model: null
+
+

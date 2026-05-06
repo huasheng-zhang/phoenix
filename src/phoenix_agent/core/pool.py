@@ -86,6 +86,29 @@ class AgentPool:
             except Exception as exc:
                 logger.warning("AgentPool: failed to init memory store: %s", exc)
 
+        # Initialize multi-agent orchestrator
+        self._orchestrator = None
+        try:
+            from phoenix_agent.core.agents.orchestrator import AgentOrchestrator
+            config_data = {}
+            if hasattr(self._config, "_file_config"):
+                config_data = self._config._file_config
+            self._orchestrator = AgentOrchestrator(
+                config=self._config,
+                memory_store=self._memory,
+            )
+            role_count = self._orchestrator.load_roles(config_data)
+            if role_count > 0:
+                logger.info(
+                    "AgentPool: multi-agent orchestrator initialised (%d roles)",
+                    role_count,
+                )
+                # Register globally for tool access
+                from phoenix_agent.tools.builtin import init_orchestrator
+                init_orchestrator(self._orchestrator)
+        except Exception as exc:
+            logger.debug("AgentPool: multi-agent orchestrator not available: %s", exc)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -199,6 +222,11 @@ class AgentPool:
         """Return the shared MemoryStore instance (or None)."""
         return self._memory
 
+    @property
+    def orchestrator(self):
+        """Return the AgentOrchestrator instance (or None)."""
+        return self._orchestrator
+
     def stats(self) -> Dict[str, int]:
         """Return pool statistics."""
         return {
@@ -268,6 +296,13 @@ class AgentPool:
         if self._memory:
             try:
                 self._memory.db.close()
+            except Exception:
+                pass
+
+        # Shut down orchestrator workers
+        if self._orchestrator:
+            try:
+                self._orchestrator.shutdown()
             except Exception:
                 pass
 

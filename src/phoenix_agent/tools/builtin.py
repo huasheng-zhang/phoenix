@@ -47,6 +47,7 @@ def load_builtin_tools(registry: ToolRegistry) -> None:
     _register_utility_tools(registry)
     _register_file_sharing_tools(registry)
     _register_scheduler_tools(registry)
+    _register_agent_tools(registry)
 
 
 # ---------------------------------------------------------------------------
@@ -1553,3 +1554,240 @@ def _register_scheduler_tools(registry: ToolRegistry) -> None:
           },
           "required": ["name"]},
          ToolCategory.UTILITY, remove_scheduled_task)
+
+
+# ---------------------------------------------------------------------------
+# MULTI-AGENT COLLABORATION TOOLS
+# ---------------------------------------------------------------------------
+
+_orchestrator_instance = None
+
+
+def _get_orchestrator():
+    """
+    Get the global AgentOrchestrator singleton.
+    Returns None if multi-agent collaboration is not enabled or the
+    orchestrator has not been initialized.
+    """
+    global _orchestrator_instance
+    if _orchestrator_instance is not None:
+        return _orchestrator_instance
+
+    # Try to auto-initialise from the running AgentPool or server
+    try:
+        from phoenix_agent.core.agents.orchestrator import AgentOrchestrator
+        from phoenix_agent.core.config import get_config
+        from phoenix_agent.core.state import Database, MemoryStore
+
+        cfg = get_config()
+        if not cfg:
+            return None
+
+        # Load roles from config
+        orchestrator = AgentOrchestrator(config=cfg)
+
+        # Try to share memory if available
+        try:
+            from phoenix_agent.core.state import SessionState
+            db = SessionState._get_default_db()
+            memory = MemoryStore(db)
+            orchestrator._memory = memory
+        except Exception:
+            pass
+
+        # Load roles from config file
+        config_data = {}
+        if hasattr(cfg, "_file_config"):
+            config_data = cfg._file_config
+        orchestrator.load_roles(config_data)
+
+        _orchestrator_instance = orchestrator
+        return orchestrator
+    except Exception as exc:
+        logger.debug("Failed to auto-init orchestrator: %s", exc)
+        return None
+
+
+def init_orchestrator(orchestrator) -> None:
+    """
+    Set the global orchestrator instance explicitly.
+    Call this from server.py or pool.py after creating the orchestrator.
+    """
+    global _orchestrator_instance
+    _orchestrator_instance = orchestrator
+
+
+def get_orchestrator():
+    """Public accessor for the global orchestrator (may be None)."""
+    return _get_orchestrator()
+
+
+def list_agent_roles() -> str:
+    """
+    List all available agent roles for multi-agent collaboration.
+
+    Shows role name, description, and available tools for each role.
+    Use this to discover which specialist agents are available for delegation.
+    """
+    orchestrator = _get_orchestrator()
+    if not orchestrator:
+        return ToolResult(
+            success=True,
+            content="Multi-agent collaboration is not enabled. "
+                    "No agent roles are configured.\n\n"
+                    "To enable, add an 'agent_roles' section to config.yaml "
+                    "or create role YAML files in ~/.phoenix/roles/ or ./roles/.\n"
+                    "Example config.yaml:\n"
+                    "  agent_roles:\n"
+                    "    researcher:\n"
+                    "      system_prompt: 'You are a research specialist.'\n"
+                    "      tools: [web_search, web_fetch, read_file]",
+        ).to_json()
+
+    roles = orchestrator.list_roles()
+    if not roles:
+        return ToolResult(
+            success=True,
+            content="No agent roles configured. Add roles to config.yaml "
+                    "or create YAML files in ~/.phoenix/roles/ or ./roles/.",
+        ).to_json()
+
+    lines = [f"Available Agent Roles ({len(roles)} total)\n"]
+    lines.append(f"{'Name':<20} {'Model':<20} {'Tools'}")
+    lines.append("-" * 80)
+    for r in roles:
+        tools_str = ", ".join(r.get("tools", [])[:5])
+        if len(r.get("tools", [])) > 5:
+            tools_str += f" (+{len(r['tools']) - 5} more)"
+        lines.append(
+            f"{r['name']:<20} {r.get('model', '(default)'):<20} {tools_str}"
+        )
+        if r.get("description"):
+            lines.append(f"  Description: {r['description']}")
+
+    return ToolResult(success=True, content="\n".join(lines)).to_json()
+
+
+def delegate_to_agent(
+    role: str,
+    task: str,
+    context: str = "",
+) -> str:
+    """
+    Delegate a task to a specialist agent.
+
+    The specialist agent will work on the task using its own tools and
+    expertise, then return the result for you to incorporate into your
+    response.
+
+    Use this when a task requires specialized capabilities that are
+    better handled by a dedicated agent (e.g. research, coding, review).
+
+    Args:
+        role: Name of the target agent role (use list_agent_roles to see options).
+        task: The task description for the specialist agent.
+        context: Optional background context to help the specialist.
+    """
+    orchestrator = _get_orchestrator()
+    if not orchestrator:
+        return ToolResult(
+            success=False, content="",
+            error="Multi-agent collaboration not enabled. No orchestrator available.",
+        ).to_json()
+
+    result = orchestrator.delegate(
+        role_name=role,
+        task=task,
+        context=context,
+    )
+
+    if not result.success:
+        return ToolResult(success=False, content="", error=result.error).to_json()
+
+    # Format the response
+    meta = f"\n[Delegated to: {result.role}, took {result.duration_ms}ms, {result.iterations} iterations]"
+    return ToolResult(
+        success=True,
+        content=result.content + meta,
+        metadata={
+            "delegated_to": result.role,
+            "duration_ms": result.duration_ms,
+            "iterations": result.iterations,
+        },
+    ).to_json()
+
+
+def ask_agent(
+    role: str,
+    question: str,
+    context: str = "",
+) -> str:
+    """
+    Ask a specialist agent a quick question (no tool use).
+
+    Unlike delegate_to_agent, this sends a lightweight query without
+    allowing the specialist to use tools. Use this for quick consultations,
+    fact-checking, or getting a second opinion.
+
+    Args:
+        role: Name of the target agent role (use list_agent_roles to see options).
+        question: The question to ask the specialist.
+        context: Optional background context.
+    """
+    orchestrator = _get_orchestrator()
+    if not orchestrator:
+        return ToolResult(
+            success=False, content="",
+            error="Multi-agent collaboration not enabled. No orchestrator available.",
+        ).to_json()
+
+    result = orchestrator.ask(
+        role_name=role,
+        question=question,
+        context=context,
+    )
+
+    if not result.success:
+        return ToolResult(success=False, content="", error=result.error).to_json()
+
+    return ToolResult(
+        success=True,
+        content=result.content,
+        metadata={"asked": result.role, "duration_ms": result.duration_ms},
+    ).to_json()
+
+
+def _register_agent_tools(registry: ToolRegistry) -> None:
+    """Register multi-agent collaboration tools."""
+    _reg(registry, "list_agent_roles",
+         "List all available agent roles for multi-agent collaboration. "
+         "Shows each role's name, description, and tools. "
+         "Use this to discover which specialist agents are available for delegation.",
+         {"type": "object", "properties": {}, "required": []},
+         ToolCategory.UTILITY, list_agent_roles)
+
+    _reg(registry, "delegate_to_agent",
+         "Delegate a task to a specialist agent. The specialist works on the task "
+         "using its own tools and expertise, then returns the result. "
+         "Use list_agent_roles to see available roles.",
+         {"type": "object",
+          "properties": {
+              "role":    {"type": "string", "description": "Name of the target agent role"},
+              "task":    {"type": "string", "description": "Task description for the specialist"},
+              "context": {"type": "string", "description": "Optional background context (default: '')"},
+          },
+          "required": ["role", "task"]},
+         ToolCategory.UTILITY, delegate_to_agent)
+
+    _reg(registry, "ask_agent",
+         "Ask a specialist agent a quick question without tool use. "
+         "Lightweight delegation for consultations, fact-checking, or second opinions. "
+         "Use list_agent_roles to see available roles.",
+         {"type": "object",
+          "properties": {
+              "role":      {"type": "string", "description": "Name of the target agent role"},
+              "question":  {"type": "string", "description": "Question for the specialist"},
+              "context":   {"type": "string", "description": "Optional background context (default: '')"},
+          },
+          "required": ["role", "question"]},
+         ToolCategory.UTILITY, ask_agent)
