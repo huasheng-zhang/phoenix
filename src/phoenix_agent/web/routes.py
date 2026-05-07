@@ -1002,10 +1002,15 @@ def build_web_routes(pool, config=None) -> list:
             )
 
             # Invalidate global config cache so next read picks up changes
-            from phoenix_agent.core.config import reset_config
+            from phoenix_agent.core.config import reset_config, get_config
             reset_config()
 
-            return JSONResponse({"message": f"Section '{section}' updated. Restart or reload for full effect.",
+            # Hot-reload: re-read the config file and replace the local cfg reference
+            nonlocal cfg
+            new_cfg = get_config(str(config_path))
+            cfg = new_cfg
+
+            return JSONResponse({"message": f"Section '{section}' updated and hot-reloaded.",
                                  "section": section})
         except Exception as exc:
             logger.exception("[web] Error updating config")
