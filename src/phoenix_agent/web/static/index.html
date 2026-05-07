@@ -934,7 +934,18 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 
   // --- Execution progress renderer ---
   function renderProgress(steps, iter, maxIter) {
-    if (!steps || steps.length === 0) return '';
+    if (!steps || steps.length === 0) {
+      if (iter > 0) {
+        // Show compact thinking indicator
+        const pct = maxIter > 0 ? Math.min(Math.round((iter / maxIter) * 100), 100) : 0;
+        return '<div class="progress-steps">'
+          + '<div class="progress-header">'
+          + '<span class="ph-iter" style="animation:pulse 1.2s infinite">\u23f3 THINKING \u2022 STEP ' + iter + (maxIter ? '/' + maxIter : '') + '</span>'
+          + '<div class="ph-bar-wrap"><div class="ph-bar" style="width:' + pct + '%;animation:pulse 1.5s infinite"></div></div>'
+          + '</div></div>';
+      }
+      return '';
+    }
     const pct = maxIter > 0 ? Math.min(Math.round((iter / maxIter) * 100), 100) : 0;
     let html = '<div class="progress-steps">'
       + '<div class="progress-header">'
@@ -1338,7 +1349,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
               const cardId='mention-card-'+ms.role+'-'+Date.now();
               mentionCardMap[ms.role]=cardId;
               mentionCards+=renderMentionCard(ms,'processing',cardId);
-              bContent.innerHTML=mentionCards+agentCards+renderMd(full);
+              _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
               setStatusDelegating(ms.role);
             }
@@ -1353,7 +1364,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
                 oldCard.outerHTML=newCard;
               } else {
                 mentionCards+=newCard;
-                bContent.innerHTML=mentionCards+agentCards+renderMd(full);
+                _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
               }
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
               clearStatusDelegating();
@@ -1393,7 +1404,8 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }else if(p.error){
               const card=bContent.querySelector('.confirm-card');
-              bContent.innerHTML=mentionCards+agentCards+renderMd('\u26a0\ufe0f '+p.error)+(card?card.outerHTML:'');
+              const progressHtml=renderProgress(progressSteps,currentIter,maxIter);
+              bContent.innerHTML=mentionCards+agentCards+progressHtml+renderMd('\u26a0\ufe0f '+p.error)+(card?card.outerHTML:'');
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }else if(p.content){
               full+=p.content;
