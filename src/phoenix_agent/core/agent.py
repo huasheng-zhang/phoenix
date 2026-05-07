@@ -88,7 +88,9 @@ class Agent:
         self._skill_registry = None  # lazy-init
 
         # Callbacks
-        self.on_tool_call: Optional[Callable] = None
+        self.on_tool_call: Optional[Callable] = None      # fired AFTER tool completes
+        self.on_tool_start: Optional[Callable] = None     # fired BEFORE tool starts
+        self.on_iteration: Optional[Callable] = None      # fired at each iteration (LLM call)
         self.on_response: Optional[Callable] = None
         self.on_skill_change: Optional[Callable] = None
 
@@ -178,6 +180,16 @@ class Agent:
 
         while self.iteration_count < self.max_iterations:
             try:
+                # --- Fire iteration callback (UI progress) ---
+                if self.on_iteration:
+                    try:
+                        self.on_iteration(
+                            iteration=self.iteration_count + 1,
+                            max_iterations=self.max_iterations,
+                        )
+                    except Exception:
+                        pass
+
                 # Make LLM call
                 response = self.provider.complete(
                     messages=messages_for_api,
@@ -296,6 +308,13 @@ class Agent:
                 logger.warning("Could not parse tool arguments for %s: %r",
                                tool_name, tool_args_raw)
                 tool_args = {}
+
+            # --- Fire on_tool_start callback (UI progress) -----------------
+            if self.on_tool_start:
+                try:
+                    self.on_tool_start(tool_name, tool_args)
+                except Exception:
+                    pass
 
             # --- Execute tool ---------------------------------------------
             try:

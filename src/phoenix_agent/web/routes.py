@@ -77,6 +77,45 @@ def build_web_routes(pool, config=None) -> list:
     # --- @mention utility ---
     _MENTION_RE = re.compile(r'@([\w-]+)\s+([\s\S]*)')
 
+    # --- Tool display summary helper ---
+    def _tool_display_summary(tool_name: str, tool_args: dict) -> str:
+        """Generate a human-readable summary for a tool invocation."""
+        _SUMMARY_MAP = {
+            "read_file": lambda a: a.get("file_path", a.get("path", "file")),
+            "write_file": lambda a: a.get("file_path", a.get("path", "file")),
+            "edit_file": lambda a: a.get("file_path", a.get("path", "file")),
+            "list_directory": lambda a: a.get("directory_path", a.get("path", "directory")),
+            "grep": lambda a: f'"{a.get("pattern", "")}" in {a.get("file_path", "...")}',
+            "glob_files": lambda a: f'{a.get("pattern", "")} in {a.get("base_directory", "...")}',
+            "run_command": lambda a: a.get("command", "")[:80],
+            "web_search": lambda a: a.get("query", a.get("keyword", "")),
+            "web_fetch": lambda a: a.get("url", "")[:60],
+            "send_message": lambda a: f'to {a.get("recipient", "")}',
+            "save_memory": lambda a: a.get("key", "")[:40],
+            "recall_memory": lambda a: a.get("query", "")[:40],
+            "execute_python": lambda a: "(running code)",
+            "execute_bash": lambda a: a.get("command", "")[:80],
+            "list_scheduled_tasks": lambda a: "(listing tasks)",
+            "add_scheduled_task": lambda a: a.get("task_name", a.get("name", "task")),
+            "remove_scheduled_task": lambda a: a.get("task_name", a.get("name", "task")),
+            "delegate_to_agent": lambda a: f"@{a.get('role', '')} — {a.get('task', '')[:50]}",
+            "ask_agent": lambda a: f"@{a.get('role', '')} — {a.get('question', '')[:50]}",
+        }
+        gen = _SUMMARY_MAP.get(tool_name)
+        if gen:
+            try:
+                s = gen(tool_args or {})
+                return s if isinstance(s, str) else str(s)
+            except Exception:
+                pass
+        # Fallback: tool_name + first arg value
+        if tool_args:
+            first_val = next(iter(tool_args.values()), "")
+            if isinstance(first_val, str) and len(first_val) > 60:
+                first_val = first_val[:60] + "..."
+            return f"{tool_name}({first_val})" if first_val else tool_name
+        return tool_name
+
     def _parse_mentions(message: str) -> list:
         """
         Parse @mention patterns from user message.
@@ -495,9 +534,27 @@ def build_web_routes(pool, config=None) -> list:
                         "metadata": getattr(tool_result, "metadata", None) or {},
                     }))
 
+                def _on_tool_start(tool_name, tool_args):
+                    """Callback: notify frontend that a tool is about to run."""
+                    # Produce a short summary for the UI
+                    summary = _tool_display_summary(tool_name, tool_args)
+                    result_queue.put(("tool_start", {
+                        "tool_name": tool_name,
+                        "summary": summary,
+                    }))
+
+                def _on_iteration(iteration, max_iterations):
+                    """Callback: notify frontend of iteration progress."""
+                    result_queue.put(("iteration", {
+                        "iteration": iteration,
+                        "max_iterations": max_iterations,
+                    }))
+
                 def _run_agent():
                     try:
                         agent.on_tool_call = _on_tool_result
+                        agent.on_tool_start = _on_tool_start
+                        agent.on_iteration = _on_iteration
                         # Build the message: inject mention results as context
                         effective_msg = clean_message
                         if mention_results:
@@ -544,9 +601,13 @@ def build_web_routes(pool, config=None) -> list:
                         elif msg_type == "chunk":
                             # Send as JSON in SSE data field
                             yield f"data: {json.dumps({'content': msg_data})}\n\n"
+                        elif msg_type == "tool_start":
+                            yield f"data: {json.dumps({'tool_start': msg_data})}\n\n"
                         elif msg_type == "tool_result":
                             # Forward tool result to frontend (e.g. confirmation request)
                             yield f"data: {json.dumps({'tool_result': msg_data})}\n\n"
+                        elif msg_type == "iteration":
+                            yield f"data: {json.dumps({'iteration': msg_data})}\n\n"
                         elif msg_type == "error":
                             yield f"data: {json.dumps({'error': msg_data})}\n\n"
                         elif msg_type == "done":

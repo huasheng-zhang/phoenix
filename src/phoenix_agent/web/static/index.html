@@ -238,6 +238,23 @@ a{color:var(--accent);text-decoration:none}
 .status-dot.thinking{background:var(--accent);animation:pulse 1s infinite;box-shadow:0 0 8px rgba(59,130,246,.3)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
+/* --- Execution progress steps --- */
+.progress-steps{margin:8px 0 4px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(59,130,246,.04);overflow:hidden}
+.progress-header{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:11px;color:var(--text-dim);border-bottom:1px solid var(--border);background:rgba(59,130,246,.06)}
+.progress-header .ph-iter{color:var(--accent);font-weight:600;font-size:10px;letter-spacing:.3px;text-transform:uppercase}
+.progress-header .ph-bar-wrap{flex:1;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden}
+.progress-header .ph-bar{height:100%;background:var(--accent);border-radius:2px;transition:width .4s ease;min-width:0}
+.progress-list{padding:4px 0;max-height:200px;overflow-y:auto}
+.progress-item{display:flex;align-items:flex-start;gap:8px;padding:5px 12px;font-size:12px;animation:fadeIn .2s ease}
+.progress-item .pi-icon{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;margin-top:1px}
+.progress-item .pi-icon.running{background:var(--accent-bg);color:var(--accent);animation:pulse 1.2s infinite}
+.progress-item .pi-icon.done{background:rgba(34,197,94,.15);color:var(--success)}
+.progress-item .pi-icon.error{background:rgba(239,68,68,.15);color:var(--danger)}
+.progress-item .pi-text{flex:1;min-width:0;color:var(--text);word-break:break-all;line-height:1.4}
+.progress-item .pi-text .pi-tool{font-weight:600;color:var(--text-bright)}
+.progress-item .pi-text .pi-summary{color:var(--text-dim);font-size:11px}
+.progress-item .pi-dur{color:var(--text-dim);font-size:10px;white-space:nowrap;margin-top:2px}
+
 .panel-overlay{position:fixed;top:0;right:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:50;display:none;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .panel-overlay.open{display:flex;justify-content:flex-end}
 .settings-panel{width:var(--panel-w);max-width:95vw;height:100%;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;animation:slideIn .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
@@ -915,6 +932,42 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     return html;
   }
 
+  // --- Execution progress renderer ---
+  function renderProgress(steps, iter, maxIter) {
+    if (!steps || steps.length === 0) return '';
+    const pct = maxIter > 0 ? Math.min(Math.round((iter / maxIter) * 100), 100) : 0;
+    let html = '<div class="progress-steps">'
+      + '<div class="progress-header">'
+      + '<span class="ph-iter">STEP ' + iter + (maxIter ? '/' + maxIter : '') + '</span>'
+      + '<div class="ph-bar-wrap"><div class="ph-bar" style="width:' + pct + '%"></div></div>'
+      + '</div>'
+      + '<div class="progress-list">';
+    for (const s of steps) {
+      const iconClass = s.status === 'running' ? 'running' : (s.status === 'done' ? 'done' : 'error');
+      const icon = s.status === 'running' ? '\u23f3' : (s.status === 'done' ? '\u2705' : '\u274c');
+      const dur = s.finishedAt && s.startedAt
+        ? ((s.finishedAt - s.startedAt) < 1000 ? (s.finishedAt - s.startedAt) + 'ms' : ((s.finishedAt - s.startedAt) / 1000).toFixed(1) + 's')
+        : '';
+      html += '<div class="progress-item">'
+        + '<div class="pi-icon ' + iconClass + '">' + icon + '</div>'
+        + '<div class="pi-text"><span class="pi-tool">' + escHtml(s.tool_name) + '</span>'
+        + (s.summary ? ' <span class="pi-summary">' + escHtml(s.summary) + '</span>' : '')
+        + '</div>'
+        + (dur ? '<div class="pi-dur">' + dur + '</div>' : '')
+        + '</div>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+
+  // Refresh message content with progress overlay
+  function _refreshProgress(bContent, mentionCards, agentCards, full, confirmShown, steps, iter, maxIter) {
+    const progressHtml = renderProgress(steps, iter, maxIter);
+    const mdHtml = full ? renderMd(full) : '';
+    const card = confirmShown ? bContent.querySelector('.confirm-card') : null;
+    bContent.innerHTML = mentionCards + agentCards + progressHtml + mdHtml + (card ? card.outerHTML : '');
+  }
+
   // --- @Mention autocomplete system ---
   const mentionState = {
     active: false,        // is the dropdown open?
@@ -1249,6 +1302,10 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       const bContent=bubble.querySelector('.md');
       const msgsEl=panelMsgs(idx);
 
+      // Progress tracking state
+      let progressSteps=[];  // [{tool_name, summary, status:'running'|'done'|'error', startedAt}]
+      let currentIter=0, maxIter=0;
+
       while(true){
         const{done,value}=await reader.read();if(done)break;
         const chunk=dec.decode(value,{stream:true});
@@ -1262,6 +1319,18 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
               if(ai.agent_name&&ai.agent_name!==getPanelAgent(idx)){
                 selectAgent(idx,ai.agent_name);
               }
+            }
+            else if(p.tool_start){
+              // Tool execution started
+              const ts=p.tool_start;
+              progressSteps.push({tool_name:ts.tool_name,summary:ts.summary,status:'running',startedAt:Date.now()});
+              _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
+              if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
+            }
+            else if(p.iteration){
+              const it=p.iteration;
+              currentIter=it.iteration;maxIter=it.max_iterations;
+              _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
             }
             else if(p.mention_start){
               // @mention delegation started
@@ -1291,6 +1360,14 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
             }
             else if(p.tool_result){
               const tr=p.tool_result;
+              // Update progress step status
+              for(let i=progressSteps.length-1;i>=0;i--){
+                if(progressSteps[i].tool_name===tr.tool_name&&progressSteps[i].status==='running'){
+                  progressSteps[i].status=tr.success?'done':'error';
+                  progressSteps[i].finishedAt=Date.now();
+                  break;
+                }
+              }
               if(tr.tool_name==='delegate_to_agent'||tr.tool_name==='ask_agent'){
                 const dRole=tr.metadata?.delegated_to||tr.metadata?.asked||tr.tool_args?.role;
                 if(dRole)setStatusDelegating(dRole);
@@ -1300,24 +1377,18 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
                 }else{
                   full+='\n\n\u26a0\ufe0f Delegation failed: '+(tr.error||'unknown error');
                 }
-                if(confirmShown){
-                  const card=bContent.querySelector('.confirm-card');
-                  bContent.innerHTML=mentionCards+agentCards+renderMd(full)+(card?card.outerHTML:'');
-                }else{bContent.innerHTML=mentionCards+agentCards+renderMd(full)}
+                _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
               }
               else if(tr.metadata&&tr.metadata.needs_confirmation&&tr.metadata.command){
-                bContent.innerHTML=mentionCards+agentCards+(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
+                bContent.innerHTML=mentionCards+agentCards+renderProgress(progressSteps,currentIter,maxIter)+(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
                 confirmShown=true;
               }else if(tr.metadata&&tr.metadata.send_file){
-                bContent.innerHTML=mentionCards+agentCards+(full?renderMd(full):'')+renderSentFileCard(tr);
+                bContent.innerHTML=mentionCards+agentCards+renderProgress(progressSteps,currentIter,maxIter)+(full?renderMd(full):'')+renderSentFileCard(tr);
                 full+='\n\n[File: '+(tr.metadata.filename||'file')+']';
               }else{
                 const info=tr.success?'\u2705 '+(tr.tool_name||'tool')+' executed':'\u26a0\ufe0f '+(tr.error||(tr.tool_name||'tool')+' failed');
                 full+='\n\n'+info;
-                if(confirmShown){
-                  const card=bContent.querySelector('.confirm-card');
-                  bContent.innerHTML=mentionCards+agentCards+renderMd(full)+(card?card.outerHTML:'');
-                }else{bContent.innerHTML=mentionCards+agentCards+renderMd(full)}
+                _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
               }
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }else if(p.error){
@@ -1326,10 +1397,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }else if(p.content){
               full+=p.content;
-              if(confirmShown){
-                const card=bContent.querySelector('.confirm-card');
-                bContent.innerHTML=mentionCards+agentCards+renderMd(full)+(card?card.outerHTML:'');
-              }else{bContent.innerHTML=mentionCards+agentCards+renderMd(full)}
+              _refreshProgress(bContent,mentionCards,agentCards,full,confirmShown,progressSteps,currentIter,maxIter);
               if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;
             }
           }catch(e){}
