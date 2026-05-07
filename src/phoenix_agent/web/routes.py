@@ -455,11 +455,16 @@ def build_web_routes(pool, config=None) -> list:
         if not clean_message:
             clean_message = message  # fallback: keep original if all was @mentions
 
-        async def _event_stream():
-            """Generate SSE events from the agent response."""
+        def _event_stream():
+            """Generate SSE events from the agent response.
+
+            IMPORTANT: This must be a *sync* generator (not async def).
+            StreamingResponse runs sync generators in a thread pool so that
+            ``queue.Queue.get()`` never blocks the ASGI event-loop, which
+            guarantees each ``yield`` is flushed to the client immediately.
+            """
             try:
                 from phoenix_agent.core.agents.orchestrator import DelegationResult
-                loop = asyncio.get_event_loop()
 
                 # We run the agent in a thread and stream chunks via a queue
                 import queue
@@ -659,7 +664,7 @@ def build_web_routes(pool, config=None) -> list:
         if not topic:
             return PlainTextResponse("topic is required", status_code=400)
 
-        async def _event_stream():
+        def _event_stream():
             try:
                 import queue as _queue
                 import threading
@@ -1237,7 +1242,7 @@ def build_web_routes(pool, config=None) -> list:
         if not task:
             return PlainTextResponse("task is required", status_code=400)
 
-        async def _event_stream():
+        def _event_stream():
             try:
                 import queue as _queue
                 import threading
