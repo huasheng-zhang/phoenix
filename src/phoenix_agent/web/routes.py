@@ -978,11 +978,23 @@ def build_web_routes(pool, config=None) -> list:
                     status_code=400)
 
             config_path = getattr(cfg, "config_file", None)
-            if not config_path or not config_path.exists():
-                return JSONResponse({"error": "Config file not found"}, status_code=500)
+            if not config_path:
+                return JSONResponse({"error": "Config file path not configured"}, status_code=400)
 
             import yaml
-            file_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+
+            # Read existing file or start with empty dict
+            file_data = {}
+            if config_path.exists():
+                try:
+                    file_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                except yaml.YAMLError as e:
+                    return JSONResponse({"error": f"Config file is not valid YAML: {e}"}, status_code=400)
+
+            # Ensure parent directory exists
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Merge the new section
             file_data[section] = data
             config_path.write_text(
                 yaml.safe_dump(file_data, allow_unicode=True, sort_keys=False),
@@ -997,7 +1009,7 @@ def build_web_routes(pool, config=None) -> list:
                                  "section": section})
         except Exception as exc:
             logger.exception("[web] Error updating config")
-            return JSONResponse({"error": "Failed to update config"}, status_code=500)
+            return JSONResponse({"error": f"Failed to update config: {exc}"}, status_code=500)
 
     # --- Skills management API ---
 
