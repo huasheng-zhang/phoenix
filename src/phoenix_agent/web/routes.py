@@ -538,6 +538,7 @@ def build_web_routes(pool, config=None) -> list:
                     """Callback: notify frontend that a tool is about to run."""
                     # Produce a short summary for the UI
                     summary = _tool_display_summary(tool_name, tool_args)
+                    logger.info("[SSE] pushing tool_start: %s -> %s", tool_name, summary)
                     result_queue.put(("tool_start", {
                         "tool_name": tool_name,
                         "summary": summary,
@@ -545,6 +546,7 @@ def build_web_routes(pool, config=None) -> list:
 
                 def _on_iteration(iteration, max_iterations):
                     """Callback: notify frontend of iteration progress."""
+                    logger.info("[SSE] pushing iteration: %s/%s", iteration, max_iterations)
                     result_queue.put(("iteration", {
                         "iteration": iteration,
                         "max_iterations": max_iterations,

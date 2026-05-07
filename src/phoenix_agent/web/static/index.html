@@ -1325,6 +1325,8 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
           const data=line.slice(6);if(data==='[DONE]')break;
           try{
             const p=JSON.parse(data);
+            // DEBUG: log all SSE events
+            console.log('[SSE event]', Object.keys(p)[0], p);
             if(p.agent_info){
               const ai=p.agent_info;
               if(ai.agent_name&&ai.agent_name!==getPanelAgent(idx)){
