@@ -958,6 +958,7 @@ def build_web_routes(pool, config=None) -> list:
                "data": {...}}
         Only the specified section is overwritten. Other sections remain unchanged.
         """
+        nonlocal cfg
         if not await _check_auth(request):
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
@@ -1006,7 +1007,6 @@ def build_web_routes(pool, config=None) -> list:
             reset_config()
 
             # Hot-reload: re-read the config file and replace the local cfg reference
-            nonlocal cfg
             new_cfg = get_config(str(config_path))
             cfg = new_cfg
 
