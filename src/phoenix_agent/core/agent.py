@@ -13,6 +13,7 @@ import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Callable, Iterator, TYPE_CHECKING
+from urllib.parse import urljoin, urlparse
 
 from phoenix_agent.core.config import Config, get_config
 from phoenix_agent.core.message import Message, Role, MessageHistory
@@ -161,19 +162,35 @@ class Agent:
         """
         Switch to a named model configuration.
 
+        If *model_name* is not found in the registered configs, this method
+        tries to match it against any config whose ``model`` field equals
+        *model_name* (useful for switching to a discovered model by ID
+        without explicitly registering it first).
+
         Args:
             model_name: Name of the model to switch to (as defined in
-                        config.yaml ``agent.models`` or ``"default"``).
+                        config.yaml ``agent.models``, ``"default"``, or
+                        a raw model ID that matches a config's model field).
 
         Returns:
             True if the switch succeeded, False if the model name was not found.
         """
-        if model_name not in self._model_configs:
-            logger.warning("Unknown model name: %s (available: %s)",
-                           model_name, list(self._model_configs.keys()))
-            return False
+        if model_name in self._model_configs:
+            cfg = self._model_configs[model_name]
+        else:
+            # Try to find a config whose model ID matches
+            matched = None
+            for name, cfg in self._model_configs.items():
+                if cfg.get("model") == model_name:
+                    matched = name
+                    break
+            if matched is None:
+                logger.warning("Unknown model name: %s (available: %s)",
+                               model_name, list(self._model_configs.keys()))
+                return False
+            model_name = matched
+            cfg = self._model_configs[model_name]
 
-        cfg = self._model_configs[model_name]
         try:
             self.provider = create_provider(cfg["type"], cfg)
             self._current_model_name = model_name
@@ -188,6 +205,119 @@ class Agent:
     def current_model(self) -> str:
         """Return the name of the currently active model."""
         return self._current_model_name
+
+    def discover_models(
+        self,
+        base_url: str,
+        api_key: Optional[str] = None,
+        provider_type: str = "openai",
+    ) -> List[Dict[str, str]]:
+        """
+        Discover available models from an OpenAI-compatible endpoint.
+
+        Calls ``GET {base_url}/v1/models`` and returns the list of models.
+        Discovered models are NOT automatically registered — the caller
+        should pick one and call :meth:`register_model` or :meth:`switch_model`
+        to use it.
+
+        Args:
+            base_url: Base URL of the service (e.g. ``http://localhost:8080``).
+            api_key: Optional API key for the endpoint.
+            provider_type: Provider type (default ``"openai"``).
+
+        Returns:
+            List of dicts with keys: ``id``, ``object``, ``owned_by``,
+            plus ``base_url``, ``api_key``, ``provider_type`` for convenience.
+            Empty list on failure.
+        """
+        import urllib.request
+        import urllib.error
+        import ssl
+
+        # Normalize base_url — strip trailing slash
+        base_url = base_url.rstrip("/")
+
+        # Build the models endpoint URL
+        # OpenAI-compatible APIs expose /v1/models
+        models_url = base_url + "/v1/models"
+
+        logger.info("Discovering models from %s", models_url)
+
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        req = urllib.request.Request(models_url, headers=headers)
+
+        try:
+            # Allow self-signed certs for local deployments
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            models_list = data.get("data", [])
+            result = []
+            for m in models_list:
+                model_id = m.get("id", "")
+                if model_id:
+                    result.append({
+                        "id": model_id,
+                        "object": m.get("object", "model"),
+                        "owned_by": m.get("owned_by", ""),
+                        "base_url": base_url,
+                        "api_key": api_key or "",
+                        "provider_type": provider_type,
+                    })
+
+            logger.info("Discovered %d models from %s", len(result), base_url)
+            return result
+
+        except urllib.error.URLError as exc:
+            logger.error("Failed to connect to %s: %s", models_url, exc)
+            return []
+        except Exception as exc:
+            logger.error("Model discovery failed: %s", exc)
+            return []
+
+    def register_model(
+        self,
+        name: str,
+        model: str,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        provider_type: Optional[str] = None,
+        description: str = "",
+    ) -> bool:
+        """
+        Register a discovered model for later switching.
+
+        Args:
+            name: Unique name for the model entry.
+            model: Model identifier (e.g. ``deepseek-chat``).
+            base_url: Optional base URL override.
+            api_key: Optional API key override.
+            provider_type: Optional provider type override.
+            description: Human-readable description.
+
+        Returns:
+            True if registration succeeded.
+        """
+        if name in self._model_configs:
+            logger.warning("Model name '%s' already exists, updating", name)
+
+        self._model_configs[name] = {
+            "type": provider_type or self.config.provider.type,
+            "model": model,
+            "api_key": api_key or self.config.provider.api_key or "",
+            "base_url": base_url or self.config.provider.base_url,
+            "timeout": self.config.provider.timeout,
+            "description": description,
+        }
+        logger.info("Registered model '%s' -> %s (%s)", name, model, provider_type)
+        return True
 
     # ==================================================================
     # Plan mode

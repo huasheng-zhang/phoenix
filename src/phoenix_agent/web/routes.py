@@ -1259,6 +1259,13 @@ def build_web_routes(pool, config=None) -> list:
 
         agent = pool.get_agent("web", pool_key)
 
+        # Sync model configs from the shared registry agent so that
+        # newly registered models are available for switching.
+        registry = pool.get_agent("web", "__models_list__")
+        for name, cfg in registry._model_configs.items():
+            if name not in agent._model_configs:
+                agent._model_configs[name] = cfg
+
         if agent.switch_model(model_name):
             return JSONResponse({
                 "message": f"Switched to model '{model_name}'",
@@ -1271,6 +1278,90 @@ def build_web_routes(pool, config=None) -> list:
                 "error": f"Model '{model_name}' not found",
                 "available_models": available,
             }, status_code=404)
+
+    async def _api_discover_models(request: Request):
+        """POST /api/models/discover — discover models from an endpoint.
+
+        Body: {"base_url": "http://...", "api_key": "optional", "provider_type": "openai"}
+        """
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        base_url = body.get("base_url", "").strip()
+        api_key = body.get("api_key", "").strip() or None
+        provider_type = body.get("provider_type", "openai").strip()
+
+        if not base_url:
+            return JSONResponse({"error": "base_url is required"}, status_code=400)
+
+        # Discover using a temp agent (or any agent)
+        agent = pool.get_agent("web", "__discover__")
+        import asyncio
+        loop = asyncio.get_event_loop()
+        models = await loop.run_in_executor(
+            None,
+            lambda: agent.discover_models(base_url, api_key, provider_type),
+        )
+
+        if not models:
+            return JSONResponse({
+                "error": "No models found or connection failed",
+                "base_url": base_url,
+            }, status_code=502)
+
+        return JSONResponse({
+            "models": models,
+            "base_url": base_url,
+            "count": len(models),
+        })
+
+    async def _api_register_model(request: Request):
+        """POST /api/models/register — register a discovered model for use.
+
+        Body: {"name": "my-model", "model": "model-id", "base_url": "...",
+               "api_key": "...", "provider_type": "...", "description": "..."}
+        """
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        name = body.get("name", "").strip()
+        model = body.get("model", "").strip()
+        base_url = body.get("base_url", "").strip() or None
+        api_key = body.get("api_key", "").strip() or None
+        provider_type = body.get("provider_type", "").strip() or None
+        description = body.get("description", "").strip()
+
+        if not name:
+            return JSONResponse({"error": "name is required"}, status_code=400)
+        if not model:
+            return JSONResponse({"error": "model is required"}, status_code=400)
+
+        # Register on the shared "models_list" agent so that
+        # GET /api/models always sees newly registered models.
+        agent = pool.get_agent("web", "__models_list__")
+        agent.register_model(
+            name=name,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            provider_type=provider_type,
+            description=description,
+        )
+
+        return JSONResponse({
+            "message": f"Model '{name}' registered",
+            "models": agent.list_models(),
+        })
 
     # --- Plan mode API ---
 
@@ -1514,6 +1605,8 @@ def build_web_routes(pool, config=None) -> list:
         Route("/api/agents/{name}", endpoint=_api_delete_agent, methods=["DELETE"]),
         Route("/api/models", endpoint=_api_list_models, methods=["GET"]),
         Route("/api/models/switch", endpoint=_api_switch_model, methods=["POST"]),
+        Route("/api/models/discover", endpoint=_api_discover_models, methods=["POST"]),
+        Route("/api/models/register", endpoint=_api_register_model, methods=["POST"]),
         Route("/api/plan-mode", endpoint=_api_get_plan_mode, methods=["GET"]),
         Route("/api/plan-mode", endpoint=_api_set_plan_mode, methods=["PUT"]),
     ]

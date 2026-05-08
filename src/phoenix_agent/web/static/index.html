@@ -451,6 +451,33 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
 .modal-footer .btn-create:hover{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 4px 14px rgba(37,99,235,.3)}
 .modal-footer .btn-create:disabled{opacity:.4;cursor:not-allowed}
 
+/* Discover models modal */
+.discover-form{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
+.discover-input-row{display:flex;gap:10px}
+.discover-input-row .form-group{flex:1}
+.discover-results{max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-xs)}
+.discover-results-header{padding:10px 14px;font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);z-index:1}
+.discover-item{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .15s}
+.discover-item:last-child{border-bottom:none}
+.discover-item:hover{background:var(--surface2)}
+.discover-item.selected{background:rgba(59,130,246,.06)}
+.discover-item .di-info{flex:1;min-width:0}
+.discover-item .di-id{font-size:13px;font-weight:600;color:var(--text-bright);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.discover-item .di-owner{font-size:11px;color:var(--text-dim);margin-top:2px}
+.discover-item .di-btn{padding:4px 12px;border:1px solid var(--accent);border-radius:var(--radius-xs);background:transparent;color:var(--accent);cursor:pointer;font-size:11px;font-family:var(--font);font-weight:600;transition:var(--transition);flex-shrink:0}
+.discover-item .di-btn:hover{background:var(--accent);color:#fff}
+.discover-item .di-btn.registered{border-color:var(--success);color:var(--success);background:rgba(34,197,94,.06)}
+.discover-empty{padding:32px 14px;text-align:center;color:var(--text-dim);font-size:13px}
+.discover-loading{text-align:center;padding:32px;color:var(--text-dim);font-size:13px}
+.discover-loading::after{content:'';display:inline-block;width:16px;height:16px;border:2px solid var(--border-light);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin-left:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn-discover{padding:9px 20px;border:none;border-radius:var(--radius-xs);background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;cursor:pointer;font-size:13px;font-family:var(--font);font-weight:600;transition:var(--transition);box-shadow:0 2px 8px rgba(6,182,212,.2)}
+.btn-discover:hover{background:linear-gradient(135deg,#22d3ee,#06b6d4);box-shadow:0 4px 14px rgba(6,182,212,.3)}
+.btn-discover:disabled{opacity:.4;cursor:not-allowed}
+.btn-register-all{padding:9px 20px;border:none;border-radius:var(--radius-xs);background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;cursor:pointer;font-size:13px;font-family:var(--font);font-weight:600;transition:var(--transition);box-shadow:0 2px 8px rgba(34,197,94,.2)}
+.btn-register-all:hover{background:linear-gradient(135deg,#4ade80,#22c55e)}
+.btn-register-all:disabled{opacity:.4;cursor:not-allowed}
+
 .file-panel-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:50;display:none;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 .file-panel-overlay.open{display:flex;justify-content:flex-end}
 .file-panel{width:var(--panel-w);max-width:95vw;height:100%;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;animation:slideIn .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
@@ -772,6 +799,43 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       <button class="btn-cancel" id="collabCancelBtn" onclick="closeCollabModal()">Cancel</button>
       <button class="collab-stop-btn" id="collabStopBtn" onclick="stopCollab()" style="display:none">&#9632; Stop</button>
       <button class="collab-result-btn" id="collabStartBtn" onclick="startCollab()">Start Collaboration</button>
+    </div>
+  </div>
+</div>
+
+<!-- Discover Models Modal -->
+<div class="modal-overlay" id="discoverOverlay" onclick="closeDiscoverModal()">
+  <div class="modal" onclick="event.stopPropagation()" style="width:600px">
+    <div class="modal-header">
+      <h3>&#128269; Discover Models</h3>
+      <button class="modal-close" onclick="closeDiscoverModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="discover-form">
+        <div class="discover-input-row">
+          <div class="form-group">
+            <label class="form-label">Base URL</label>
+            <input class="form-input" id="discoverBaseUrl" placeholder="http://localhost:8080" value="">
+          </div>
+          <div class="form-group" style="max-width:140px">
+            <label class="form-label">API Key</label>
+            <input class="form-input" id="discoverApiKey" type="password" placeholder="(optional)">
+          </div>
+        </div>
+        <div class="discover-input-row">
+          <div class="form-group" style="max-width:180px">
+            <label class="form-label">Provider Type</label>
+            <select class="form-input" id="discoverProviderType">
+              <option value="openai">OpenAI</option>
+              <option value="openai-compatible" selected>OpenAI-Compatible</option>
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end">
+            <button class="btn-discover" id="btnDiscover" onclick="discoverModels()">Discover</button>
+          </div>
+        </div>
+      </div>
+      <div id="discoverResults" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -1793,29 +1857,42 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   function renderModelDropdown(idx){
     const list=document.getElementById('modelDropdownList-'+idx);
     if(!list)return;
-    if(!modelListCache.length){
-      list.innerHTML='<div class="msd-empty">No models configured.<br>Add <code>agent.models</code> in config.yaml</div>';
-      return;
-    }
     let html='';
-    modelListCache.forEach(m=>{
-      const icon=m.type==='anthropic'?'&#129302;':'&#9729;';
-      const cls=m.is_active?'active':'';
-      html+='<div class="msd-item '+cls+'" onclick="switchModel('+idx+',\''+escAttr(m.name)+'\')">'
-        +'<span class="msd-icon">'+icon+'</span>'
-        +'<div class="msd-info">'
-        +'<div class="msd-name">'+escHtml(m.name)+'</div>'
-        +'<div class="msd-model">'+escHtml(m.model||m.type)+'</div>'
-        +(m.description?'<div class="msd-desc">'+escHtml(m.description)+'</div>':'')
-        +'</div>'
-        +'<span class="msd-check">&#10003;</span>'
-        +'</div>';
-    });
+    if(!modelListCache.length){
+      html='<div class="msd-empty">No models configured.</div>';
+    }else{
+      modelListCache.forEach(m=>{
+        const icon=m.type==='anthropic'?'&#129302;':'&#9729;';
+        const cls=m.is_active?'active':'';
+        html+='<div class="msd-item '+cls+'" onclick="switchModel('+idx+',\''+escAttr(m.name)+'\')">'
+          +'<span class="msd-icon">'+icon+'</span>'
+          +'<div class="msd-info">'
+          +'<div class="msd-name">'+escHtml(m.name)+'</div>'
+          +'<div class="msd-model">'+escHtml(m.model||m.type)+'</div>'
+          +(m.description?'<div class="msd-desc">'+escHtml(m.description)+'</div>':'')
+          +'</div>'
+          +'<span class="msd-check">&#10003;</span>'
+          +'</div>';
+      });
+    }
+    // Discover button at bottom
+    html+='<div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:8px">'
+      +'<button style="flex:1;padding:8px;border:1px solid rgba(6,182,212,.25);border-radius:var(--radius-xs);background:rgba(6,182,212,.06);color:var(--cyan);cursor:pointer;font-size:12px;font-family:var(--font);font-weight:600;transition:var(--transition)" '
+      +'onclick="closeModelDropdown('+idx+');openDiscoverModal()" '
+      +'onmouseover="this.style.background=\'rgba(6,182,212,.12)\'" '
+      +'onmouseout="this.style.background=\'rgba(6,182,212,.06)\'"'
+      +'>&#128269; Discover from Endpoint</button>'
+      +'</div>';
     list.innerHTML=html;
     // Update header
     const currentEl=document.getElementById('msdCurrent-'+idx);
     const active=modelListCache.find(m=>m.is_active);
     if(currentEl)currentEl.textContent=active?active.name:'--';
+  }
+
+  window.closeModelDropdown=function(idx){
+    const dd=document.getElementById('modelDropdown-'+idx);
+    if(dd){dd.classList.remove('open');const btn=dd.parentElement.querySelector('.model-selector-btn');if(btn)btn.classList.remove('open')}
   }
 
   window.switchModel=function(idx,modelName){
@@ -1883,6 +1960,152 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     }catch(e){}
   }
 
+  // ==================================================================
+  // Discover models from endpoint
+  // ==================================================================
+
+  var discoveredModels=[];  // cache of discovered models from /api/models/discover
+
+  window.openDiscoverModal=function(){
+    document.getElementById('discoverOverlay').classList.add('open');
+    // Pre-fill base_url from current provider config if it has one
+    var urlEl=document.getElementById('discoverBaseUrl');
+    if(!urlEl.value&&currentConfig?.provider?.base_url){
+      urlEl.value=currentConfig.provider.base_url.replace(/\/v1$/,'');
+    }
+  };
+
+  window.closeDiscoverModal=function(){
+    document.getElementById('discoverOverlay').classList.remove('open');
+  };
+
+  window.discoverModels=async function(){
+    var baseUrl=document.getElementById('discoverBaseUrl').value.trim();
+    var apiKey=document.getElementById('discoverApiKey').value.trim();
+    var providerType=document.getElementById('discoverProviderType').value;
+    var resultsEl=document.getElementById('discoverResults');
+    var btn=document.getElementById('btnDiscover');
+
+    if(!baseUrl){showToast('Base URL is required','error');return}
+
+    btn.disabled=true;
+    btn.textContent='Discovering...';
+    resultsEl.style.display='block';
+    resultsEl.innerHTML='<div class="discover-loading">Discovering models...</div>';
+
+    try{
+      var r=await fetch('/api/models/discover',{
+        method:'POST',
+        headers:{...getAuthHeaders(),'Content-Type':'application/json'},
+        body:JSON.stringify({base_url:baseUrl,api_key:apiKey||null,provider_type:providerType})
+      });
+      var data=await r.json();
+      if(data.error){
+        resultsEl.innerHTML='<div class="discover-empty">Discovery failed: '+escHtml(data.error)+'<br><br>Check that the URL is correct and the service is running.</div>';
+        return;
+      }
+      discoveredModels=data.models||[];
+      renderDiscoverResults(baseUrl,providerType,apiKey);
+    }catch(e){
+      resultsEl.innerHTML='<div class="discover-empty">Request failed: '+escHtml(e.message)+'</div>';
+    }finally{
+      btn.disabled=false;
+      btn.textContent='Discover';
+    }
+  };
+
+  function renderDiscoverResults(baseUrl,providerType,apiKey){
+    var resultsEl=document.getElementById('discoverResults');
+    if(!discoveredModels.length){
+      resultsEl.innerHTML='<div class="discover-empty">No models found at this endpoint.</div>';
+      return;
+    }
+    // Check which models are already registered
+    var registeredIds={};
+    modelListCache.forEach(function(m){registeredIds[m.model]=m.name});
+
+    var html='<div class="discover-results"><div class="discover-results-header"><span>'+discoveredModels.length+' models found</span>'
+      +'<button class="btn-register-all" onclick="registerAllDiscovered(\''+escAttr(baseUrl)+'\',\''+escAttr(providerType)+'\',\''+escAttr(apiKey)+'\')">Register All</button>'
+      +'</div>';
+    discoveredModels.forEach(function(m,i){
+      var isRegistered=!!registeredIds[m.id];
+      html+='<div class="discover-item" id="discover-item-'+i+'">'
+        +'<div class="di-info">'
+        +'<div class="di-id">'+escHtml(m.id)+'</div>'
+        +'<div class="di-owner">'+escHtml(m.owned_by||providerType)+'</div>'
+        +'</div>'
+        +(isRegistered
+          ?'<button class="di-btn registered" disabled>Registered</button>'
+          :'<button class="di-btn" onclick="registerDiscovered('+i+',\''+escAttr(baseUrl)+'\',\''+escAttr(providerType)+'\',\''+escAttr(apiKey)+'\')">Register</button>')
+        +'</div>';
+    });
+    html+='</div>';
+    resultsEl.innerHTML=html;
+  }
+
+  window.registerDiscovered=async function(idx,baseUrl,providerType,apiKey){
+    var m=discoveredModels[idx];
+    if(!m)return;
+    // Sanitize model ID to create a name: replace non-alphanumeric with hyphens
+    var name=m.id.replace(/[^a-zA-Z0-9._-]/g,'_');
+    var btn=document.querySelector('#discover-item-'+idx+' .di-btn');
+    if(btn){btn.disabled=true;btn.textContent='Registering...'}
+
+    try{
+      var r=await fetch('/api/models/register',{
+        method:'POST',
+        headers:{...getAuthHeaders(),'Content-Type':'application/json'},
+        body:JSON.stringify({
+          name:name,model:m.id,
+          base_url:baseUrl,api_key:apiKey||null,
+          provider_type:providerType,
+          description:'Discovered: '+m.id
+        })
+      });
+      var data=await r.json();
+      if(data.error){showToast('Registration failed: '+data.error,'error');return}
+      modelListCache=data.models||[];
+      // Update selector UI to show new models
+      document.querySelectorAll('[id^="modelSelectorName-"]').forEach(el=>{
+        var idx=el.id.split('-')[1];
+        updateModelSelectorUI(idx);
+      });
+      // Update button
+      if(btn){btn.textContent='Registered';btn.classList.add('registered');btn.disabled=true}
+      showToast('Registered model: '+name,'success');
+    }catch(e){showToast('Registration failed','error')}
+  };
+
+  window.registerAllDiscovered=async function(baseUrl,providerType,apiKey){
+    var count=0;
+    for(var i=0;i<discoveredModels.length;i++){
+      var m=discoveredModels[i];
+      var name=m.id.replace(/[^a-zA-Z0-9._-]/g,'_');
+      try{
+        var r=await fetch('/api/models/register',{
+          method:'POST',
+          headers:{...getAuthHeaders(),'Content-Type':'application/json'},
+          body:JSON.stringify({
+            name:name,model:m.id,
+            base_url:baseUrl,api_key:apiKey||null,
+            provider_type:providerType,
+            description:'Discovered: '+m.id
+          })
+        });
+        var data=await r.json();
+        if(!data.error){modelListCache=data.models||[];count++}
+      }catch(e){}
+    }
+    showToast('Registered '+count+'/'+discoveredModels.length+' models','success');
+    // Re-render discover results to show updated state
+    renderDiscoverResults(baseUrl,providerType,apiKey);
+    // Refresh selector UI to show new models
+    document.querySelectorAll('[id^="modelSelectorName-"]').forEach(el=>{
+      var idx=el.id.split('-')[1];
+      updateModelSelectorUI(idx);
+    });
+  };
+
   function renderModelTab(){
     const p=currentConfig?.provider||{};
     const ws=currentConfig?.web_search||{};
@@ -1923,7 +2146,10 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
       +'</div>'
       // Named models section
       +'<div style="margin-top:20px">'
-      +'<h3 style="font-size:14px;color:var(--text-bright);margin-bottom:8px">Named Models</h3>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+      +'<h3 style="font-size:14px;color:var(--text-bright)">Named Models</h3>'
+      +'<button onclick="openDiscoverModal()" style="padding:5px 14px;border:1px solid rgba(6,182,212,.25);border-radius:var(--radius-xs);background:rgba(6,182,212,.06);color:var(--cyan);cursor:pointer;font-size:12px;font-family:var(--font);font-weight:600;transition:var(--transition)">&#128269; Discover</button>'
+      +'</div>'
       +'<p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Configure multiple models in <code style="background:rgba(59,130,246,.1);color:var(--accent-hover);padding:1px 6px;border-radius:4px;font-size:11px">config.yaml</code> under <code style="background:rgba(59,130,246,.1);color:var(--accent-hover);padding:1px 6px;border-radius:4px;font-size:11px">agent.models</code> to switch between them at runtime.</p>'
       +'<div id="namedModelsList"></div>'
       +'</div>';

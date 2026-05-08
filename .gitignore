@@ -74,3 +74,16 @@ t.txt
 
 # Misc temp dirs
 ai_news_notifier/
+
+# Uploads (user uploaded files)
+uploads/
+
+# Root-level temp / scratch files
+/*.py
+/*.html
+/*.svg
+/*.txt
+/*.md
+!README.md
+!CLAUDE.md
+!CHANGELOG.md
