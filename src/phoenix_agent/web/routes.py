@@ -11,8 +11,13 @@ Routes
 - ``GET  /``                → serves the SPA HTML page
 - ``POST /api/chat``        → send a message, returns full response
 - ``POST /api/chat/stream`` → send a message, returns SSE stream
+- ``POST /api/chat/plan``   → analyze a task without executing tools (plan mode)
 - ``POST /api/session/new`` → reset the current session (new conversation)
 - ``GET  /api/history``     → return current conversation history
+- ``GET  /api/models``      → list all available model configurations
+- ``POST /api/models/switch``→ switch the active model for a session
+- ``GET  /api/plan-mode``   → get current plan mode state
+- ``PUT  /api/plan-mode``   → enable/disable plan mode
 - ``GET  /health``          → health check (same as the main server one)
 
 Authentication
@@ -1216,6 +1221,144 @@ def build_web_routes(pool, config=None) -> list:
         del _custom_agents[name]
         return JSONResponse({"message": f"Agent '{name}' deleted"})
 
+    # --- Models API ---
+
+    async def _api_list_models(request: Request):
+        """GET /api/models — list all available model configurations."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        # Get a reference agent to list its models
+        agent = pool.get_agent("web", "__models_list__")
+        models = agent.list_models()
+        return JSONResponse({"models": models, "current": agent.current_model})
+
+    async def _api_switch_model(request: Request):
+        """POST /api/models/switch — switch the active model for a session.
+
+        Body: {"model": "model_name", "session_id": "..."}
+        """
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        model_name = body.get("model", "").strip()
+        session_id = body.get("session_id", "").strip()
+
+        if not model_name:
+            return JSONResponse({"error": "model name is required"}, status_code=400)
+
+        # Get the agent for this session (or create default)
+        pool_key = _get_pool_key(session_id) or "__default_switch__"
+        if session_id and session_id not in _sessions:
+            _sessions[session_id] = pool_key
+
+        agent = pool.get_agent("web", pool_key)
+
+        if agent.switch_model(model_name):
+            return JSONResponse({
+                "message": f"Switched to model '{model_name}'",
+                "model": model_name,
+                "models": agent.list_models(),
+            })
+        else:
+            available = [m["name"] for m in agent.list_models()]
+            return JSONResponse({
+                "error": f"Model '{model_name}' not found",
+                "available_models": available,
+            }, status_code=404)
+
+    # --- Plan mode API ---
+
+    async def _api_get_plan_mode(request: Request):
+        """GET /api/plan-mode — get current plan mode state for a session."""
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        session_id = request.query_params.get("session_id", "").strip()
+        pool_key = _get_pool_key(session_id) or "__default_plan__"
+        agent = pool.get_agent("web", pool_key)
+
+        return JSONResponse({"plan_mode": agent.plan_mode})
+
+    async def _api_set_plan_mode(request: Request):
+        """PUT /api/plan-mode — enable or disable plan mode.
+
+        Body: {"enabled": true/false, "session_id": "..."}
+        """
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        enabled = body.get("enabled")
+        session_id = body.get("session_id", "").strip()
+
+        if enabled is None or not isinstance(enabled, bool):
+            return JSONResponse({"error": "enabled (boolean) is required"}, status_code=400)
+
+        pool_key = _get_pool_key(session_id) or "__default_plan__"
+        if session_id and session_id not in _sessions:
+            _sessions[session_id] = pool_key
+
+        agent = pool.get_agent("web", pool_key)
+        agent.set_plan_mode(enabled)
+
+        return JSONResponse({
+            "message": f"Plan mode {'enabled' if enabled else 'disabled'}",
+            "plan_mode": enabled,
+        })
+
+    async def _api_chat_plan(request: Request):
+        """POST /api/chat/plan — analyze a task without executing tools.
+
+        Same as /api/chat but forces plan_mode=True for this request.
+        Body: {"message": "...", "session_id": "..."}
+        """
+        if not await _check_auth(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        message = body.get("message", "").strip()
+        session_id = body.get("session_id", "")
+
+        if not message:
+            return JSONResponse({"error": "message is required"}, status_code=400)
+
+        pool_key = _get_pool_key(session_id) or _new_session_id()
+        if session_id and session_id not in _sessions:
+            _sessions[session_id] = pool_key
+
+        agent = pool.get_agent("web", pool_key)
+
+        try:
+            loop = asyncio.get_event_loop()
+            response_text = await loop.run_in_executor(
+                None, lambda: agent.plan(message),
+            )
+            return JSONResponse({
+                "response": response_text or "",
+                "plan_mode": True,
+                "session_id": session_id or pool_key,
+            })
+        except Exception as exc:
+            logger.exception("[web] Error in /api/chat/plan")
+            return JSONResponse(
+                {"error": "Internal error. Please try again."},
+                status_code=500,
+            )
+
     async def _api_delegate(request: Request):
         """POST /api/chat/delegate — SSE endpoint for delegating a task from the main chat.
 
@@ -1353,6 +1496,7 @@ def build_web_routes(pool, config=None) -> list:
         Route("/", endpoint=_serve_index, methods=["GET"]),
         Route("/api/chat", endpoint=_api_chat, methods=["POST"]),
         Route("/api/chat/stream", endpoint=_api_chat_stream, methods=["POST"]),
+        Route("/api/chat/plan", endpoint=_api_chat_plan, methods=["POST"]),
         Route("/api/chat/delegate", endpoint=_api_delegate, methods=["POST"]),
         Route("/api/chat/collaborate", endpoint=_api_collaborate, methods=["POST"]),
         Route("/api/session/new", endpoint=_api_session_new, methods=["POST"]),
@@ -1368,6 +1512,10 @@ def build_web_routes(pool, config=None) -> list:
         Route("/api/agents", endpoint=_api_list_agents, methods=["GET"]),
         Route("/api/agents", endpoint=_api_create_agent, methods=["POST"]),
         Route("/api/agents/{name}", endpoint=_api_delete_agent, methods=["DELETE"]),
+        Route("/api/models", endpoint=_api_list_models, methods=["GET"]),
+        Route("/api/models/switch", endpoint=_api_switch_model, methods=["POST"]),
+        Route("/api/plan-mode", endpoint=_api_get_plan_mode, methods=["GET"]),
+        Route("/api/plan-mode", endpoint=_api_set_plan_mode, methods=["PUT"]),
     ]
 
     return routes

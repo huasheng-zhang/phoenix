@@ -83,6 +83,29 @@ class Agent:
         self.iteration_count = 0
         self.max_iterations = self.config.agent.max_iterations
 
+        # Plan mode: analyze without executing tools
+        self.plan_mode: bool = self.config.agent.plan_mode
+
+        # Multi-model support: track current model name and available models
+        self._current_model_name: str = "default"
+        self._model_configs: Dict[str, Any] = {"default": {
+            "type": self.config.provider.type,
+            "model": self.config.provider.model,
+            "api_key": self.config.provider.api_key or "",
+            "base_url": self.config.provider.base_url,
+            "timeout": self.config.provider.timeout,
+        }}
+        # Register named models from config
+        for mc in self.config.agent.models:
+            self._model_configs[mc.name] = {
+                "type": mc.type,
+                "model": mc.model,
+                "api_key": mc.api_key or self.config.provider.api_key or "",
+                "base_url": mc.base_url or self.config.provider.base_url,
+                "timeout": mc.timeout,
+                "description": mc.description,
+            }
+
         # Skill support
         self._active_skill: Optional["Skill"] = None
         self._skill_registry = None  # lazy-init
@@ -111,6 +134,95 @@ class Agent:
         errors = self.provider.validate_config()
         if errors:
             logger.warning("Provider configuration issues: %s", errors)
+
+    # ==================================================================
+    # Multi-model switching
+    # ==================================================================
+
+    def list_models(self) -> List[Dict[str, str]]:
+        """
+        List all available model configurations.
+
+        Returns:
+            List of dicts with keys: name, model, type, description, is_active.
+        """
+        result = []
+        for name, cfg in self._model_configs.items():
+            result.append({
+                "name": name,
+                "model": cfg.get("model", ""),
+                "type": cfg.get("type", ""),
+                "description": cfg.get("description", ""),
+                "is_active": (name == self._current_model_name),
+            })
+        return result
+
+    def switch_model(self, model_name: str) -> bool:
+        """
+        Switch to a named model configuration.
+
+        Args:
+            model_name: Name of the model to switch to (as defined in
+                        config.yaml ``agent.models`` or ``"default"``).
+
+        Returns:
+            True if the switch succeeded, False if the model name was not found.
+        """
+        if model_name not in self._model_configs:
+            logger.warning("Unknown model name: %s (available: %s)",
+                           model_name, list(self._model_configs.keys()))
+            return False
+
+        cfg = self._model_configs[model_name]
+        try:
+            self.provider = create_provider(cfg["type"], cfg)
+            self._current_model_name = model_name
+            logger.info("Switched to model '%s' (%s / %s)",
+                        model_name, cfg["type"], cfg.get("model", ""))
+            return True
+        except Exception as exc:
+            logger.error("Failed to switch to model '%s': %s", model_name, exc)
+            return False
+
+    @property
+    def current_model(self) -> str:
+        """Return the name of the currently active model."""
+        return self._current_model_name
+
+    # ==================================================================
+    # Plan mode
+    # ==================================================================
+
+    def set_plan_mode(self, enabled: bool) -> None:
+        """
+        Enable or disable plan mode.
+
+        In plan mode, the agent analyzes the task and produces a structured
+        plan but does NOT execute any tools.
+        """
+        self.plan_mode = enabled
+        logger.info("Plan mode %s", "enabled" if enabled else "disabled")
+
+    def plan(self, user_input: str) -> str:
+        """
+        Run a single-turn plan-only analysis.
+
+        The agent receives the user's request and produces a plan without
+        executing any tools.  This is a convenience wrapper that temporarily
+        forces plan_mode for one turn.
+
+        Args:
+            user_input: The task or question to analyze.
+
+        Returns:
+            The agent's plan as a text string.
+        """
+        was_plan_mode = self.plan_mode
+        self.plan_mode = True
+        try:
+            return self.run(user_input, stream=False)
+        finally:
+            self.plan_mode = was_plan_mode
 
     def run(
         self,
@@ -238,6 +350,23 @@ class Agent:
 
                 # Check for tool calls
                 if response.has_tool_calls():
+                    # In plan mode, don't execute tools — return the plan text
+                    if self.plan_mode:
+                        # Build a plan summary instead of executing
+                        tool_names = [tc.get("function", {}).get("name", "unknown")
+                                      for tc in (response.tool_calls or [])]
+                        plan_note = (
+                            f"\n\n> **[Plan Mode]** The following tools would be used: "
+                            f"{', '.join(tool_names)}. "
+                            f"Disable plan mode to execute."
+                        )
+                        final_response = (response.content or "") + plan_note
+                        # Store plan message
+                        plan_msg = Message.assistant(content=final_response)
+                        self.history.add_message(plan_msg)
+                        self.session.add_message(role="assistant", content=final_response)
+                        break
+
                     tool_result_msgs = self._execute_tool_calls(response.tool_calls)
                     # Append tool results AFTER the assistant message (already done above)
                     messages_for_api.extend(tool_result_msgs)
@@ -499,4 +628,5 @@ class Agent:
         return self.history.messages.copy()
 
     def __repr__(self) -> str:
-        return f"PhoenixAgent(model={self.config.provider.model}, session={self.session.session_id[:8]}...)"
+        return (f"PhoenixAgent(model={self._current_model_name}/{self.config.provider.model}, "
+                f"plan={self.plan_mode}, session={self.session.session_id[:8]}...)")

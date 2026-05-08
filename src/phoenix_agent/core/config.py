@@ -98,6 +98,29 @@ class ProviderConfig:
 
 
 @dataclass
+class ModelConfig:
+    """Configuration for a single named model entry."""
+
+    name: str = ""            # unique identifier, e.g. "gpt4", "deepseek"
+    type: str = "openai"      # openai, anthropic, openai-compatible
+    model: str = ""           # actual model name, e.g. "gpt-4o"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    max_tokens: int = 8192
+    timeout: int = 120
+    description: str = ""     # human-readable description
+
+    def __post_init__(self):
+        """Resolve ${ENV_VAR} placeholders in api_key and base_url."""
+        for field_name in ["api_key", "base_url"]:
+            value = getattr(self, field_name, None)
+            if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+                env_var = value[2:-1]
+                resolved = os.environ.get(env_var, "")
+                setattr(self, field_name, resolved or None)
+
+
+@dataclass
 class AgentConfig:
     """Configuration for the agent behavior."""
 
@@ -174,6 +197,15 @@ class AgentConfig:
     max_memory_tokens: int = 2000
     # Auto-save last N assistant messages as memories at session end (0 = disabled)
     auto_save_threshold: int = 0
+
+    # Plan mode: when True, the agent analyzes and proposes a plan without
+    # executing any tools.  The user can review and then switch plan_mode off
+    # to let the agent execute.
+    plan_mode: bool = False
+
+    # Named model entries for multi-model switching.
+    # Each entry is a ModelConfig with its own provider settings.
+    models: List[ModelConfig] = field(default_factory=list)
 
 
 @dataclass
@@ -394,6 +426,23 @@ class Config:
             AgentConfig().system_prompt
         )
 
+        # --- Build named model entries ---
+        raw_models = file_section.get("models", [])
+        model_entries: List[ModelConfig] = []
+        for m in raw_models:
+            if not isinstance(m, dict) or not m.get("name"):
+                continue
+            model_entries.append(ModelConfig(
+                name=m["name"],
+                type=m.get("type", "openai"),
+                model=m.get("model", ""),
+                api_key=m.get("api_key"),
+                base_url=m.get("base_url"),
+                max_tokens=m.get("max_tokens", 8192),
+                timeout=m.get("timeout", 120),
+                description=m.get("description", ""),
+            ))
+
         return AgentConfig(
             max_iterations=file_section.get("max_iterations", 50),
             temperature=file_section.get("temperature", 0.7),
@@ -407,6 +456,8 @@ class Config:
             memory_enabled=file_section.get("memory_enabled", True),
             max_memory_tokens=file_section.get("max_memory_tokens", 2000),
             auto_save_threshold=file_section.get("auto_save_threshold", 0),
+            plan_mode=file_section.get("plan_mode", False),
+            models=model_entries,
         )
 
     def _build_tool_config(self) -> ToolConfig:

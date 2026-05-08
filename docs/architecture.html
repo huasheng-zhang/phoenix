@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phoenix Agent v1.0.0 — 技术架构图</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --purple: #a855f7;
+    --red: #ef4444;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
+    --orange: #f97316;
+    --teal: #14b8a6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+    padding: 32px 40px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .header p {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .header .version {
+    display: inline-block;
+    background: rgba(59,130,246,0.15);
+    color: #60a5fa;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  .container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 24px 40px 60px;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 28px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .legend-bar {
+    width: 20px;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  /* Architecture Sections */
+  .section {
+    margin-bottom: 32px;
+  }
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  /* Module Grid */
+  .module-grid {
+    display: grid;
+    gap: 16px;
+  }
+  .module-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .module-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .module-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+  .module-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    transition: all 0.2s ease;
+    cursor: default;
+  }
+  .module-card:hover {
+    border-color: var(--blue);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(59,130,246,0.1);
+  }
+  .module-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .module-card .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .module-card .card-title .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .module-card .card-file {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    background: rgba(255,255,255,0.05);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .module-card .card-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .module-card .features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .feature-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .tag-done {
+    background: rgba(34,197,94,0.12);
+    color: #4ade80;
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .tag-partial {
+    background: rgba(245,158,11,0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(245,158,11,0.2);
+  }
+  .status-indicator {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .status-stable { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .status-active { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .status-wip { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+  /* Flow Diagram */
+  .flow-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    overflow-x: auto;
+  }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .flow-row:last-child { margin-bottom: 0; }
+  .flow-box {
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 2px solid;
+  }
+  .flow-arrow {
+    color: var(--text-dim);
+    font-size: 18px;
+  }
+  .flow-arrow-down {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 18px;
+    margin: 4px 0;
+  }
+
+  /* Mermaid */
+  .mermaid-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    overflow-x: auto;
+  }
+  .mermaid {
+    display: flex;
+    justify-content: center;
+  }
+  .mermaid svg {
+    max-width: 100%;
+  }
+
+  /* Data Table */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .data-table th {
+    background: rgba(59,130,246,0.08);
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 10px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .data-table code {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: #7dd3fc;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* Nav tabs */
+  .nav-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 4px;
+    border: 1px solid var(--border);
+  }
+  .nav-tab {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--text-dim);
+    border: none;
+    background: none;
+    transition: all 0.2s;
+  }
+  .nav-tab:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .nav-tab.active {
+    background: rgba(59,130,246,0.15);
+    color: #60a5fa;
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  @media (max-width: 900px) {
+    .module-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+    .module-grid.cols-3 { grid-template-columns: repeat(2, 1fr); }
+    .container { padding: 16px 20px 40px; }
+    .header { padding: 20px; }
+  }
+  @media (max-width: 600px) {
+    .module-grid.cols-4,
+    .module-grid.cols-3,
+    .module-grid.cols-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Phoenix Agent 技术架构<span class="version">v1.0.0</span></h1>
+  <p>多渠道 AI Agent 框架 &mdash; 实现状态全景图 &mdash; 2026-05-08</p>
+</div>
+
+<div class="container">
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat-item"><div class="stat-value">4</div><div class="stat-label">消息渠道</div></div>
+  <div class="stat-item"><div class="stat-value">17+</div><div class="stat-label">内置工具</div></div>
+  <div class="stat-item"><div class="stat-value">10</div><div class="stat-label">专家角色</div></div>
+  <div class="stat-item"><div class="stat-value">158</div><div class="stat-label">测试用例</div></div>
+  <div class="stat-item"><div class="stat-value">7</div><div class="stat-label">核心模块</div></div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div> 已完成 (Stable)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> 活跃开发中</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> 部分完成 / WIP</div>
+  <div class="legend-item"><div class="legend-bar" style="background:#334155"></div> 数据流</div>
+  <div class="legend-item"><div class="legend-bar" style="background:#3b82f6; height:2px; border-top:2px dashed #3b82f6; background:none;"></div> 依赖关系</div>
+</div>
+
+<!-- Nav -->
+<div class="nav-tabs">
+  <button class="nav-tab active" onclick="showTab('overview')">架构总览</button>
+  <button class="nav-tab" onclick="showTab('modules')">模块详情</button>
+  <button class="nav-tab" onclick="showTab('flow')">数据流</button>
+  <button class="nav-tab" onclick="showTab('tools')">工具清单</button>
+  <button class="nav-tab" onclick="showTab('config')">配置体系</button>
+</div>
+
+<!-- ========== Tab: Overview ========== -->
+<div class="tab-panel active" id="tab-overview">
+
+  <!-- Mermaid Architecture Diagram -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(59,130,246,0.15);color:#60a5fa;">&#9672;</div>
+      系统架构总览
+    </div>
+    <div class="mermaid-container">
+      <div class="mermaid">
+flowchart TB
+    subgraph Channels["<b>Channels 消息渠道层</b>"]
+      DT["&#x1f4e8; 钉钉<br/>stream / webhook / internal"]
+      WX["&#x1f4ac; 微信<br/>企业webhook"]
+      QQ["&#x1f422; QQ<br/>OneBot v11"]
+      TG["&#x2708; Telegram<br/>Bot API"]
+      WEB["&#x1f310; Web UI<br/>SSE + REST"]
+    end
+
+    subgraph Server["<b>Server 服务层</b>"]
+      CS["ChannelRegistry<br/>渠道注册表"]
+      AS["Starlette HTTP Server<br/>路由 + 中间件"]
+      AP["AgentPool<br/>多会话隔离池"]
+    end
+
+    subgraph Core["<b>Core 核心引擎</b>"]
+      AG["Agent<br/>主控循环"]
+      OR["AgentOrchestrator<br/>多Agent协作"]
+      RO["AgentRoles<br/>10个专家角色"]
+      SK["Skill System<br/>技能扩展"]
+      SC["PhoenixScheduler<br/>定时调度"]
+      MS["MemoryStore<br/>持久记忆"]
+    end
+
+    subgraph Tools["<b>Tools 工具层</b>"]
+      TR["ToolRegistry<br/>工具注册表"]
+      FT["FILE 文件操作<br/>read/write/edit/list/search"]
+      WT["WEB 网络工具<br/>fetch/search"]
+      ST["SYSTEM 系统工具<br/>shell/python"]
+      UT["UTILITY 实用工具<br/>calc/time/echo"]
+      SAT["SCHEDULER<br/>调度管理"]
+      AAT["AGENT<br/>委派/协作"]
+      MEM["MEMORY<br/>save/recall"]
+      FST["FILE_SHARE<br/>文件传输"]
+    end
+
+    subgraph Providers["<b>Providers LLM层</b>"]
+      OAI["OpenAI Provider<br/>OpenAI / Anthropic<br/>OpenAI-Compatible"]
+    end
+
+    subgraph Storage["<b>Storage 持久化层</b>"]
+      DB[("SQLite WAL<br/>phoenix.db")]
+      CFG["config.yaml<br/>配置文件"]
+      FS["~/.phoenix/<br/>roles/ skills/ agents/"]
+    end
+
+    DT & WX & QQ & TG & WEB --> AS
+    AS --> CS
+    AS --> AP
+    WEB -->|SSE /api/chat/stream| AG
+    CS -->|ChannelMessage| AP
+    AP -->|get_agent ch,chat_id| AG
+    AG -->|delegate| OR
+    OR --> RO
+    AG -->|use_skill| SK
+    AG -->|run_in_executor| TR
+    TR --> FT & WT & ST & UT & SAT & AAT & MEM & FST
+    AG -->|save/recall| MS
+    AG -->|complete/stream| OAI
+    AG -->|SessionState| DB
+    MS --> DB
+    SC -->|cron trigger| AG
+    SC -->|persist| CFG
+    SK -->|tools/| TR
+    SK -->|prompt| AG
+    OR -->|create Agent| AG
+
+    style Channels fill:#1a2744,stroke:#3b82f6,color:#e2e8f0
+    style Server fill:#1a2e1a,stroke:#22c55e,color:#e2e8f0
+    style Core fill:#2a1a3e,stroke:#a855f7,color:#e2e8f0
+    style Tools fill:#2e2a1a,stroke:#f59e0b,color:#e2e8f0
+    style Providers fill:#1a2a3e,stroke:#06b6d4,color:#e2e8f0
+    style Storage fill:#2e1a1a,stroke:#ef4444,color:#e2e8f0
+      </div>
+    </div>
+  </div>
+
+  <!-- Module status overview -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(34,197,94,0.15);color:#4ade80;">&#9745;</div>
+      模块实现状态一览
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr><th>模块</th><th>路径</th><th>状态</th><th>核心功能</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Agent</b></td>
+          <td><code>core/agent.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>主控循环、LLM 通信、工具调度、Skill 管理、记忆加载</td>
+        </tr>
+        <tr>
+          <td><b>AgentPool</b></td>
+          <td><code>core/pool.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>按 (channel, chat_id) 隔离会话、LRU 淘汰、idle 超时清理</td>
+        </tr>
+        <tr>
+          <td><b>Multi-Agent</b></td>
+          <td><code>core/agents/</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>Supervisor+Worker 委派、10 内置角色、自定义 Agent 创建</td>
+        </tr>
+        <tr>
+          <td><b>Memory</b></td>
+          <td><code>core/state.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>SQLite 持久记忆、跨会话知识共享、自动注入 system prompt</td>
+        </tr>
+        <tr>
+          <td><b>Scheduler</b></td>
+          <td><code>core/scheduler.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>APScheduler cron 调度、热加载 add/remove、config.yaml 持久化</td>
+        </tr>
+        <tr>
+          <td><b>Skill System</b></td>
+          <td><code>skills/</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>SKILL.yaml 清单、prompt.md、tools/、hooks/、自动发现</td>
+        </tr>
+        <tr>
+          <td><b>Tool System</b></td>
+          <td><code>tools/</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>17+ 内置工具、4 大类、安全沙箱、路径遍历防护</td>
+        </tr>
+        <tr>
+          <td><b>Web UI</b></td>
+          <td><code>web/</code></td>
+          <td><span class="status-indicator status-active">&#x25B6; Active</span></td>
+          <td>SPA 聊天界面、SSE 流式、@提及、多面板、Agent 选择器、协作弹窗</td>
+        </tr>
+        <tr>
+          <td><b>钉钉 Channel</b></td>
+          <td><code>channels/dingtalk.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>Stream/Webhook/Internal 三模式、文件传输、群@识别</td>
+        </tr>
+        <tr>
+          <td><b>微信 Channel</b></td>
+          <td><code>channels/wechat.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>企业微信 Webhook 推送</td>
+        </tr>
+        <tr>
+          <td><b>QQ Channel</b></td>
+          <td><code>channels/qq.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>OneBot v11 HTTP 协议</td>
+        </tr>
+        <tr>
+          <td><b>Telegram Channel</b></td>
+          <td><code>channels/telegram.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>Bot API 长轮询</td>
+        </tr>
+        <tr>
+          <td><b>LLM Provider</b></td>
+          <td><code>providers/openai.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>OpenAI / Anthropic / OpenAI-Compatible、流式输出、重试</td>
+        </tr>
+        <tr>
+          <td><b>Config</b></td>
+          <td><code>core/config.py</code></td>
+          <td><span class="status-indicator status-stable">&#x2714; Stable</span></td>
+          <td>YAML + ENV 三层优先级、${VAR} 占位符、validate()</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ========== Tab: Modules ========== -->
+<div class="tab-panel" id="tab-modules">
+
+  <!-- Core Module Cards -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(168,85,247,0.15);color:#c084fc;">&#9881;</div>
+      Core — 核心引擎模块
+    </div>
+    <div class="module-grid cols-2">
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Agent 主控</div>
+          <div class="card-file">core/agent.py</div>
+        </div>
+        <div class="card-desc">
+          核心对话循环，编排 LLM ↔ Tool 交互。支持流式输出、Skill 注入、记忆加载、上下文窗口管理。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">Agent-Tool 循环</span>
+          <span class="feature-tag tag-done">流式输出</span>
+          <span class="feature-tag tag-done">Skill use/clear</span>
+          <span class="feature-tag tag-done">记忆注入</span>
+          <span class="feature-tag tag-done">上下文截断</span>
+          <span class="feature-tag tag-done">@mention 委派</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>AgentPool 会话池</div>
+          <div class="card-file">core/pool.py</div>
+        </div>
+        <div class="card-desc">
+          按 (channel, chat_id) 隔离 Agent 实例。懒创建、LRU 淘汰、idle 超时自动清理、共享 MemoryStore。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">会话隔离</span>
+          <span class="feature-tag tag-done">LRU 淘汰</span>
+          <span class="feature-tag tag-done">idle 超时</span>
+          <span class="feature-tag tag-done">共享记忆</span>
+          <span class="feature-tag tag-done">线程安全</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Multi-Agent 协作</div>
+          <div class="card-file">core/agents/</div>
+        </div>
+        <div class="card-desc">
+          Supervisor+Worker 模式，主 Agent 可委派任务给专家 Worker。支持自定义 Agent 创建与切换。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">Orchestrator</span>
+          <span class="feature-tag tag-done">10 内置角色</span>
+          <span class="feature-tag tag-done">delegate_to_agent</span>
+          <span class="feature-tag tag-done">ask_agent</span>
+          <span class="feature-tag tag-done">自定义 Agent</span>
+          <span class="feature-tag tag-done">Agent 协作讨论</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Memory 记忆系统</div>
+          <div class="card-file">core/state.py</div>
+        </div>
+        <div class="card-desc">
+          SQLite-backed 持久记忆。Agent 初始化自动加载、注入 system prompt。跨会话知识共享。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">SQLite 存储</span>
+          <span class="feature-tag tag-done">key-value 模型</span>
+          <span class="feature-tag tag-done">category 分类</span>
+          <span class="feature-tag tag-done">自动注入</span>
+          <span class="feature-tag tag-done">CLI 管理</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Scheduler 调度器</div>
+          <div class="card-file">core/scheduler.py</div>
+        </div>
+        <div class="card-desc">
+          基于 APScheduler 的定时任务调度。单例模式，add/remove 立即生效并持久化到 config.yaml。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">Cron 表达式</span>
+          <span class="feature-tag tag-done">热加载</span>
+          <span class="feature-tag tag-done">自动持久化</span>
+          <span class="feature-tag tag-done">Skill 绑定</span>
+          <span class="feature-tag tag-done">多渠道推送</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Config 配置管理</div>
+          <div class="card-file">core/config.py</div>
+        </div>
+        <div class="card-desc">
+          三层优先级：环境变量 > config.yaml > 代码默认值。支持 ${ENV_VAR} 占位符解析。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">YAML 配置</span>
+          <span class="feature-tag tag-done">ENV 覆盖</span>
+          <span class="feature-tag tag-done">${VAR} 占位符</span>
+          <span class="feature-tag tag-done">validate()</span>
+          <span class="feature-tag tag-done">.env 加载</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Channel Module Cards -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(59,130,246,0.15);color:#60a5fa;">&#x1f517;</div>
+      Channels — 消息渠道层
+    </div>
+    <div class="module-grid cols-3">
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>钉钉 DingTalk</div>
+          <div class="card-file">channels/dingtalk.py</div>
+        </div>
+        <div class="card-desc">支持 Stream/Webhook/Internal 三种模式，含文件传输与 OpenAPI 集成。</div>
+        <div class="features">
+          <span class="feature-tag tag-done">Stream 长连接</span>
+          <span class="feature-tag tag-done">Webhook 回调</span>
+          <span class="feature-tag tag-done">文件上传下载</span>
+          <span class="feature-tag tag-done">群@识别</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>微信 WeChat</div>
+          <div class="card-file">channels/wechat.py</div>
+        </div>
+        <div class="card-desc">企业微信 Webhook 推送模式。</div>
+        <div class="features">
+          <span class="feature-tag tag-done">企业 Webhook</span>
+          <span class="feature-tag tag-done">Markdown 消息</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>QQ</div>
+          <div class="card-file">channels/qq.py</div>
+        </div>
+        <div class="card-desc">基于 OneBot v11 HTTP 协议的 QQ 机器人适配。</div>
+        <div class="features">
+          <span class="feature-tag tag-done">OneBot v11</span>
+          <span class="feature-tag tag-done">HTTP 通信</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Telegram</div>
+          <div class="card-file">channels/telegram.py</div>
+        </div>
+        <div class="card-desc">Telegram Bot API 长轮询模式。</div>
+        <div class="features">
+          <span class="feature-tag tag-done">Bot API</span>
+          <span class="feature-tag tag-done">长轮询</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#3b82f6"></div>Web UI</div>
+          <div class="card-file">web/routes.py + static/</div>
+        </div>
+        <div class="card-desc">SPA 聊天界面，SSE 流式传输，支持 @提及、多面板、Agent 协作。</div>
+        <div class="features">
+          <span class="feature-tag tag-done">SSE 流式</span>
+          <span class="feature-tag tag-done">REST API</span>
+          <span class="feature-tag tag-done">@提及委托</span>
+          <span class="feature-tag tag-done">多面板布局</span>
+          <span class="feature-tag tag-partial">主题切换</span>
+          <span class="feature-tag tag-partial">响应式</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>ChannelRegistry</div>
+          <div class="card-file">channels/registry.py</div>
+        </div>
+        <div class="card-desc">渠道注册表，自动发现和注册内置渠道，支持第三方扩展。</div>
+        <div class="features">
+          <span class="feature-tag tag-done">自动注册</span>
+          <span class="feature-tag tag-done">BaseChannel 抽象</span>
+          <span class="feature-tag tag-done">ChannelMessage</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Skill & Provider -->
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(245,158,11,0.15);color:#fbbf24;">&#x1f6e0;</div>
+      Skills & Providers — 扩展层
+    </div>
+    <div class="module-grid cols-2">
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>Skill System</div>
+          <div class="card-file">skills/</div>
+        </div>
+        <div class="card-desc">
+          技能扩展系统。SKILL.yaml 清单 + prompt.md + references/ + tools/ + hooks/。
+          自动发现（~/.phoenix/skills/ + ./skills/）、正则 trigger 匹配。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">SKILL.yaml 清单</span>
+          <span class="feature-tag tag-done">prompt 注入</span>
+          <span class="feature-tag tag-done">工具注入</span>
+          <span class="feature-tag tag-done">自动发现</span>
+          <span class="feature-tag tag-done">on_load/unload hooks</span>
+          <span class="feature-tag tag-done">CLI: skill list/show/create</span>
+        </div>
+      </div>
+
+      <div class="module-card">
+        <div class="card-header">
+          <div class="card-title"><div class="dot" style="background:#22c55e"></div>LLM Provider</div>
+          <div class="card-file">providers/openai.py</div>
+        </div>
+        <div class="card-desc">
+          OpenAI 兼容的 LLM 提供者。支持 OpenAI / Anthropic / 任意 OpenAI-Compatible 端点。
+          流式输出、自动重试、超时控制。
+        </div>
+        <div class="features">
+          <span class="feature-tag tag-done">OpenAI API</span>
+          <span class="feature-tag tag-done">Anthropic 兼容</span>
+          <span class="feature-tag tag-done">自定义 Base URL</span>
+          <span class="feature-tag tag-done">流式输出</span>
+          <span class="feature-tag tag-done">重试机制</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Tab: Flow ========== -->
+<div class="tab-panel" id="tab-flow">
+
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(6,182,212,0.15);color:#22d3ee;">&#x21C4;</div>
+      消息处理数据流
+    </div>
+    <div class="flow-container">
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#3b82f6; background:rgba(59,130,246,0.1); color:#60a5fa;">用户消息<br/><small style="font-weight:400;color:#94a3b8">钉钉/微信/QQ/TG/Web</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#334155; background:var(--surface); color:var(--text-dim);">ChannelAdapter<br/><small style="font-weight:400">统一 ChannelMessage</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#22c55e; background:rgba(34,197,94,0.1); color:#4ade80;">AgentPool<br/><small style="font-weight:400">按 (channel, chat_id) 路由</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#a855f7; background:rgba(168,85,247,0.1); color:#c084fc;">Agent.run()</small></div>
+      </div>
+      <div class="flow-arrow-down">&#x25BC;</div>
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#f59e0b; background:rgba(245,158,11,0.08); color:#fbbf24; font-size:12px;">1. 加载记忆 (MemoryStore)<br/>2. 匹配 Skill (auto trigger)<br/>3. @mention 解析 → Orchestrator<br/>4. 构建 system prompt</div>
+      </div>
+      <div class="flow-arrow-down">&#x25BC;</div>
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#a855f7; background:rgba(168,85,247,0.1); color:#c084fc;">LLM Provider<br/><small style="font-weight:400">OpenAI / Anthropic / Compatible</small></div>
+        <div class="flow-arrow" style="color:#f59e0b;">&#x21C4; tool_call</div>
+        <div class="flow-box" style="border-color:#f59e0b; background:rgba(245,158,11,0.1); color:#fbbf24;">ToolRegistry<br/><small style="font-weight:400">17+ 内置工具 + Skill 工具</small></div>
+      </div>
+      <div class="flow-arrow-down">&#x25BC;</div>
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#3b82f6; background:rgba(59,130,246,0.1); color:#60a5fa;">回复消息<br/><small style="font-weight:400;color:#94a3b8">文本 / 文件 / Markdown / 委派结果</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#334155; background:var(--surface); color:var(--text-dim);">ChannelAdapter<br/><small style="font-weight:400">平台格式适配</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#22c55e; background:rgba(34,197,94,0.1); color:#4ade80;">用户收到回复</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(236,72,153,0.15);color:#f472b6;">&#x1F916;</div>
+      Multi-Agent 委派流程
+    </div>
+    <div class="flow-container">
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#a855f7; background:rgba(168,85,247,0.1); color:#c084fc;">Supervisor Agent<br/><small style="font-weight:400">主对话 Agent</small></div>
+        <div class="flow-arrow">&#x27A1; delegate_to_agent(role, task)</div>
+        <div class="flow-box" style="border-color:#ec4899; background:rgba(236,72,153,0.1); color:#f472b6;">AgentOrchestrator<br/><small style="font-weight:400">查找/创建 Worker</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#f97316; background:rgba(249,115,22,0.1); color:#fb923c;">Worker Agent<br/><small style="font-weight:400">researcher / coder / ...</small></div>
+      </div>
+      <div class="flow-arrow-down">&#x25BC; worker.run(task) — 独立工具调用循环</div>
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#f97316; background:rgba(249,115,22,0.08); color:#fb923c; font-size:12px;">Worker 使用自己的 system_prompt / tools / max_iterations<br/>隔离的 MessageHistory，可选共享 MemoryStore</div>
+      </div>
+      <div class="flow-arrow-down">&#x25BC; DelegationResult</div>
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#a855f7; background:rgba(168,85,247,0.1); color:#c084fc;">Supervisor 合成最终回答</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(20,184,166,0.15);color:#2dd4bf;">&#x23F0;</div>
+      定时任务流程
+    </div>
+    <div class="flow-container">
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#14b8a6; background:rgba(20,184,166,0.1); color:#2dd4bf;">APScheduler Cron<br/><small style="font-weight:400">后台调度线程</small></div>
+        <div class="flow-arrow">&#x27A1; 触发</div>
+        <div class="flow-box" style="border-color:#14b8a6; background:rgba(20,184,166,0.1); color:#2dd4bf;">PhoenixScheduler</div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#a855f7; background:rgba(168,85,247,0.1); color:#c084fc;">Agent.run(prompt)</div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#3b82f6; background:rgba(59,130,246,0.1); color:#60a5fa;">推送到指定渠道<br/><small style="font-weight:400;color:#94a3b8">dingtalk/wechat/qq/tg</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Tab: Tools ========== -->
+<div class="tab-panel" id="tab-tools">
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(245,158,11,0.15);color:#fbbf24;">&#x1F6E0;</div>
+      内置工具清单
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr><th>类别</th><th>工具名</th><th>功能</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr><td rowspan="8" style="color:#4ade80;font-weight:700;vertical-align:top;">FILE<br/>文件操作</td>
+          <td><code>read_file</code></td><td>读取文件（支持 offset/limit 分段）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>write_file</code></td><td>写入/创建文件</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>edit_file</code></td><td>精确字符串替换编辑</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>list_directory</code></td><td>列出目录内容</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>search_files</code></td><td>按名称模式搜索文件</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>move_file</code></td><td>移动/重命名文件</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>delete_file</code></td><td>删除文件</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>create_directory</code></td><td>创建目录</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td rowspan="2" style="color:#60a5fa;font-weight:700;vertical-align:top;">WEB<br/>网络</td>
+          <td><code>web_fetch</code></td><td>抓取 URL 内容转 Markdown</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>web_search</code></td><td>网络搜索（Tavily/DDG/Custom）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td rowspan="3" style="color:#fbbf24;font-weight:700;vertical-align:top;">SYSTEM<br/>系统</td>
+          <td><code>run_command</code></td><td>执行 shell 命令（60s 超时）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>execute_python</code></td><td>执行 Python 代码</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>execute_bash</code></td><td>执行 Bash 脚本</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td rowspan="3" style="color:#c084fc;font-weight:700;vertical-align:top;">UTILITY<br/>实用</td>
+          <td><code>calculate</code></td><td>数学计算</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>get_current_time</code></td><td>获取当前时间</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>echo</code></td><td>回显文本</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td rowspan="2" style="color:#2dd4bf;font-weight:700;vertical-align:top;">MEMORY<br/>记忆</td>
+          <td><code>save_memory</code></td><td>保存持久记忆到 SQLite</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>recall_memory</code></td><td>检索历史记忆</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td rowspan="3" style="color:#14b8a6;font-weight:700;vertical-align:top;">SCHEDULER<br/>调度</td>
+          <td><code>list_scheduled_tasks</code></td><td>列出所有定时任务</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>add_scheduled_task</code></td><td>添加定时任务（立即生效）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>remove_scheduled_task</code></td><td>删除定时任务（立即生效）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td rowspan="3" style="color:#f472b6;font-weight:700;vertical-align:top;">AGENT<br/>协作</td>
+          <td><code>list_agent_roles</code></td><td>列出专家角色</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>delegate_to_agent</code></td><td>委派任务给专家（可使用工具）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+        <tr><td><code>ask_agent</code></td><td>向专家快速提问（不使用工具）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+
+        <tr><td style="color:#fb923c;font-weight:700;">FILE_SHARE<br/>文件共享</td>
+          <td><code>send_file</code></td><td>渠道文件传输（钉钉等）</td><td><span class="feature-tag tag-done">done</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ========== Tab: Config ========== -->
+<div class="tab-panel" id="tab-config">
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(239,68,68,0.15);color:#f87171;">&#x2699;</div>
+      配置体系
+    </div>
+    <div class="flow-container" style="margin-bottom:20px;">
+      <div class="flow-row">
+        <div class="flow-box" style="border-color:#94a3b8; background:rgba(148,163,184,0.08); color:#94a3b8;">代码默认值<br/><small>优先级最低</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#f59e0b; background:rgba(245,158,11,0.08); color:#fbbf24;">config.yaml<br/><small>~/.phoenix/config.yaml</small></div>
+        <div class="flow-arrow">&#x27A1;</div>
+        <div class="flow-box" style="border-color:#ef4444; background:rgba(239,68,68,0.08); color:#f87171;">环境变量<br/><small>PHOENIX_* 优先级最高</small></div>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>配置段</th><th>类</th><th>关键参数</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>provider</code></td>
+          <td>ProviderConfig</td>
+          <td>type, model, api_key, base_url, max_tokens, timeout</td>
+        </tr>
+        <tr>
+          <td><code>agent</code></td>
+          <td>AgentConfig</td>
+          <td>system_prompt, max_iterations, temperature, stream, max_history_messages, max_context_tokens, memory_enabled, max_memory_tokens</td>
+        </tr>
+        <tr>
+          <td><code>tools</code></td>
+          <td>ToolConfig</td>
+          <td>enabled[4类], disabled[], sandbox_path, allow_destructive, max_file_size</td>
+        </tr>
+        <tr>
+          <td><code>web_search</code></td>
+          <td>WebSearchConfig</td>
+          <td>provider(tavily/ddg/custom), api_key, max_results, search_depth</td>
+        </tr>
+        <tr>
+          <td><code>storage</code></td>
+          <td>StorageConfig</td>
+          <td>db_path, history_dir, max_history</td>
+        </tr>
+        <tr>
+          <td><code>channels.server</code></td>
+          <td>ChannelsConfig</td>
+          <td>host, port</td>
+        </tr>
+        <tr>
+          <td><code>channels.dingtalk</code></td>
+          <td>ChannelConfig</td>
+          <td>mode, client_id, client_secret, at_all, file_transfer_*</td>
+        </tr>
+        <tr>
+          <td><code>scheduler</code></td>
+          <td>SchedulerConfig</td>
+          <td>enabled, timezone, tasks[{name, cron, prompt, channel, chat_id, skill}]</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <div class="icon" style="background:rgba(34,197,94,0.15);color:#4ade80;">&#x1F4C1;</div>
+      文件存储结构
+    </div>
+    <table class="data-table">
+      <thead><tr><th>路径</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>~/.phoenix/config.yaml</code></td><td>主配置文件</td></tr>
+        <tr><td><code>~/.phoenix/.env</code></td><td>环境变量（API keys）</td></tr>
+        <tr><td><code>~/.phoenix/phoenix.db</code></td><td>SQLite 数据库（会话 + 记忆）</td></tr>
+        <tr><td><code>~/.phoenix/roles/</code></td><td>自定义 Agent 角色定义</td></tr>
+        <tr><td><code>~/.phoenix/skills/</code></td><td>用户级 Skill 扩展</td></tr>
+        <tr><td><code>~/.phoenix/agents/</code></td><td>自定义 Agent YAML 定义</td></tr>
+        <tr><td><code>./skills/</code></td><td>项目级 Skill 扩展</td></tr>
+        <tr><td><code>./roles/</code></td><td>项目级角色定义（覆盖同名用户角色）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- end container -->
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#1e293b',
+    primaryBorderColor: '#3b82f6',
+    primaryTextColor: '#e2e8f0',
+    lineColor: '#475569',
+    secondaryColor: '#1e3a5f',
+    tertiaryColor: '#2a1a3e',
+    fontFamily: 'system-ui, sans-serif',
+    fontSize: '13px'
+  },
+  flowchart: { curve: 'basis', padding: 16 }
+});
+
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
