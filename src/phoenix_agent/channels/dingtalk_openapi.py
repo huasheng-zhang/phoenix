@@ -359,12 +359,23 @@ class DingTalkOpenAPI:
                 )
 
             # Step 2: Download the actual file content
-            async with session.get(download_url) as file_resp:
-                if file_resp.status != 200:
-                    raise ChannelAPIError(
-                        f"File download failed: HTTP {file_resp.status}"
-                    )
-                file_bytes = await file_resp.read()
+            # DingTalk download URLs may point to internal hosts with
+            # mismatched certificates — skip SSL verification.
+            import ssl as _ssl
+            ssl_ctx = _ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = _ssl.CERT_NONE
+
+            conn = aiohttp.TCPConnector(ssl=ssl_ctx)
+            async with aiohttp.ClientSession(
+                connector=conn, timeout=ClientTimeout(total=60)
+            ) as dl_session:
+                async with dl_session.get(download_url) as file_resp:
+                    if file_resp.status != 200:
+                        raise ChannelAPIError(
+                            f"File download failed: HTTP {file_resp.status}"
+                        )
+                    file_bytes = await file_resp.read()
 
         # Try to get actual filename from download response
         actual_name = file_name
