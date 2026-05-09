@@ -340,7 +340,10 @@ class DingTalkOpenAPI:
                     "x-acs-dingtalk-access-token": token,
                     "Content-Type": "application/json",
                 },
-                json={"downloadCode": download_code},
+                json={
+                    "downloadCode": download_code,
+                    "robotCode": self._client_id,
+                },
             ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
