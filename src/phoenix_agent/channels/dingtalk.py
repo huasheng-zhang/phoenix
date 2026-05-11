@@ -152,17 +152,14 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         conversation_id = str(getattr(incoming, "conversation_id", "") or "")
         chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
 
-        # conversationType: "1" = group chat, "2" = single chat (1-on-1)
-        conv_type_raw = getattr(incoming, "conversation_type", None) or ""
-        is_group = str(conv_type_raw) != "2"
+        # Detect group vs single chat:
+        # - conversation_id starts with "cid" → single chat (1-on-1)
+        # - otherwise (e.g. "oc") → group chat
+        # The conversationType field from stream is unreliable (often empty),
+        # so we rely on the conversation_id prefix instead.
+        is_group = bool(conversation_id) and not conversation_id.startswith("cid")
         # robot_code from the stream message (most reliable source)
         robot_code = getattr(incoming, "robot_code", "") or self._robot_code
-
-        self._logger.info(
-            "[dingtalk][stream] conversation_type=%r, is_group=%s, robot_code=%s",
-            conv_type_raw, is_group,
-            robot_code[:8] + "..." if len(robot_code) > 8 else robot_code or "(EMPTY)",
-        )
 
         self._logger.info(
             "[dingtalk][stream] Message from %s (%s): msgtype=%s, conv=%s",
@@ -248,12 +245,16 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         )
 
         # Send files that the agent produced via send_file_to_user tool
-        # Strategy: try group send first, fallback to single chat on failure
         if self._openapi and pending_files:
             for file_info in pending_files:
-                await self._send_file_auto(
-                    file_info, conversation_id, sender_id, robot_code,
-                )
+                if is_group and conversation_id:
+                    await self._send_file_via_openapi(
+                        file_info, conversation_id, robot_code,
+                    )
+                elif sender_id:
+                    await self._send_file_to_single(
+                        file_info, sender_id, robot_code,
+                    )
         # Fallback: parse file paths from response text (legacy [file:...] markers)
         elif self._openapi and hasattr(incoming, "conversation_id"):
             await self._try_send_files_from_response(
@@ -375,47 +376,6 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 exc,
             )
             raise  # Let caller decide whether to fallback
-
-    async def _send_file_auto(
-        self,
-        file_info: dict,
-        conversation_id: str,
-        sender_id: str,
-        robot_code: str = "",
-    ) -> None:
-        """
-        Send a file, automatically choosing group vs single chat.
-
-        Tries group send first.  If the API returns 'resource.not.found'
-        (robot not found in this conversation), falls back to single chat
-        via send_file_to_single.
-        """
-        if conversation_id:
-            try:
-                await self._send_file_via_openapi(
-                    file_info, conversation_id, robot_code,
-                )
-                return  # success
-            except Exception as group_exc:
-                # If error is 'resource.not.found' / 'robot not found',
-                # this is likely a single-chat conversation — try single
-                err_str = str(group_exc).lower()
-                if "not.found" in err_str or "不存在" in err_str:
-                    self._logger.info(
-                        "[dingtalk][stream] Group send failed, trying single chat fallback"
-                    )
-                    if sender_id:
-                        await self._send_file_to_single(
-                            file_info, sender_id, robot_code,
-                        )
-                        return
-                raise  # re-raise if it's a different error
-
-        # No conversation_id or group failed without sender_id
-        if sender_id:
-            await self._send_file_to_single(
-                file_info, sender_id, robot_code,
-            )
 
     async def _send_file_to_single(
         self, file_info: dict, sender_id: str, robot_code: str = "",
