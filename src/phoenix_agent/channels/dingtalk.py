@@ -248,8 +248,15 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         if self._openapi and pending_files:
             for file_info in pending_files:
                 if is_group and conversation_id:
+                    # Known group chat — send directly
                     await self._send_file_via_openapi(
                         file_info, conversation_id, robot_code,
+                    )
+                elif conversation_id:
+                    # Unknown type (conversationType not set) — try group
+                    # first, fallback to single if robot not found
+                    await self._send_file_auto(
+                        file_info, conversation_id, sender_id, robot_code,
                     )
                 elif sender_id:
                     await self._send_file_to_single(
@@ -376,6 +383,34 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 exc,
             )
             raise  # Let caller decide whether to fallback
+
+    async def _send_file_auto(
+        self,
+        file_info: dict,
+        conversation_id: str,
+        sender_id: str,
+        robot_code: str = "",
+    ) -> None:
+        """
+        Try group send, fallback to single chat on 'robot not found'.
+        Used when conversationType is unavailable (e.g. empty from stream).
+        """
+        try:
+            await self._send_file_via_openapi(
+                file_info, conversation_id, robot_code,
+            )
+            return
+        except Exception as group_exc:
+            err_str = str(group_exc).lower()
+            if ("not.found" in err_str or "不存在" in err_str) and sender_id:
+                self._logger.info(
+                    "[dingtalk][stream] Group send not found, fallback to single chat"
+                )
+                await self._send_file_to_single(
+                    file_info, sender_id, robot_code,
+                )
+                return
+            raise
 
     async def _send_file_to_single(
         self, file_info: dict, sender_id: str, robot_code: str = "",
