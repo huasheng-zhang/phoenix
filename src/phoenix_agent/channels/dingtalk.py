@@ -367,13 +367,14 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 file_name or source_path,
             )
         except Exception as exc:
-            self._logger.error(
-                "[dingtalk][stream] Failed to send file to GROUP %s (robot_code=%s, conv=%s): %s",
+            self._logger.warning(
+                "[dingtalk][stream] Group send failed for %s (robot_code=%s, conv=%s): %s",
                 file_name or source_path,
                 rc,
                 conversation_id,
                 exc,
             )
+            raise  # Let caller decide whether to fallback
 
     async def _send_file_auto(
         self,
@@ -467,6 +468,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 sender_id,
                 exc,
             )
+            raise
 
     # ------------------------------------------------------------------
     # File message handling (incoming)
