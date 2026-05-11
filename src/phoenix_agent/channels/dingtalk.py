@@ -327,6 +327,14 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             return
 
         try:
+            # Use robot_code from OpenAPI client as fallback (more reliable source)
+            robot_code = self._robot_code or getattr(self._openapi, "_client_id", "")
+            self._logger.debug(
+                "[dingtalk][stream] Sending file: robot_code=%s, conv=%s, file=%s",
+                robot_code[:8] + "..." if len(robot_code) > 8 else robot_code,
+                conversation_id[:12] if conversation_id else "None",
+                file_name or os.path.basename(source_path),
+            )
             media_id = await self._openapi.upload_file(
                 file_path=source_path,
                 file_name=file_name or os.path.basename(source_path),
@@ -336,7 +344,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
             )
             await self._openapi.send_file_to_group(
-                robot_code=self._robot_code,
+                robot_code=robot_code,
                 conversation_id=conversation_id,
                 media_id=media_id,
                 file_name=file_name or os.path.basename(source_path),
