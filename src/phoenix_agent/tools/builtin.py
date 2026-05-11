@@ -1461,12 +1461,22 @@ def _get_web_upload_dir() -> Path:
     return upload_dir
 
 
-def send_file(file_path: str) -> str:
+def send_file_to_user(file_path: str) -> str:
     """
-    Send a file to the user via the Web UI.
+    Send a file to the current user across any channel.
 
-    Copies the file to the web uploads directory (if not already there)
-    and signals the frontend to display a download link.
+    The tool itself validates the file and copies it to the uploads directory.
+    Channel-specific delivery (download link for Web, upload+send for DingTalk)
+    is handled by the ``on_tool_call`` callback registered by each channel.
+
+    Metadata keys consumed by callbacks:
+      - ``send_file_to_user`` (bool): signals the callback to act
+      - ``source_path``  (str): resolved absolute path to the original file
+      - ``upload_path``  (str): path inside uploads/ (for web download URL)
+      - ``filename``     (str): original file name
+      - ``file_type``    (str): ``"image"`` or ``"file"``
+      - ``size``         (int): file size in bytes
+      - ``download_url`` (str): web download link (consumed by web channel)
     """
     try:
         src = Path(file_path).resolve()
@@ -1480,7 +1490,7 @@ def send_file(file_path: str) -> str:
         dest_name = f"{file_id}_{src.name}"
         dest = upload_dir / dest_name
 
-        # Copy to uploads dir
+        # Copy to uploads dir (also makes it available for DingTalk upload)
         import shutil
         shutil.copy2(src, dest)
 
@@ -1493,7 +1503,9 @@ def send_file(file_path: str) -> str:
             success=True,
             content=f"File sent: {src.name} ({size:,} bytes)",
             metadata={
-                "send_file": True,
+                "send_file_to_user": True,
+                "source_path": str(src),
+                "upload_path": str(dest),
                 "filename": src.name,
                 "file_type": file_type,
                 "size": size,
@@ -1505,12 +1517,30 @@ def send_file(file_path: str) -> str:
                           error=f"Failed to send file: {exc}").to_json()
 
 
+def send_file(file_path: str) -> str:
+    """
+    (Deprecated) Alias for send_file_to_user — kept for backward compatibility.
+    """
+    return send_file_to_user(file_path)
+
+
 def _register_file_sharing_tools(registry: ToolRegistry) -> None:
-    """Register file sending tools for Web UI."""
+    """Register file sending tools — works across Web UI, DingTalk, and other channels."""
+    _reg(registry, "send_file_to_user",
+         "Send a file to the current user. Works across all channels "
+         "(Web UI shows a download link, DingTalk sends the file directly). "
+         "Use this after creating or modifying files that the user needs to access.",
+         {"type": "object",
+          "properties": {
+              "file_path": {"type": "string",
+                            "description": "Absolute or relative path to the file to send"},
+          },
+          "required": ["file_path"]},
+         ToolCategory.UTILITY, send_file_to_user)
+
+    # Backward-compatible alias
     _reg(registry, "send_file",
-         "Send a file to the user via the Web UI. The file will appear as a "
-         "downloadable link in the chat. Use this after creating or modifying files "
-         "that the user needs to access.",
+         "Send a file to the user (alias for send_file_to_user).",
          {"type": "object",
           "properties": {
               "file_path": {"type": "string",

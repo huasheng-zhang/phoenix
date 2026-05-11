@@ -190,6 +190,31 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         # Resolve per-conversation agent from pool
         agent = self._pool.get_agent(self._channel_name, chat_key)
 
+        # Collect files to send via on_tool_call callback
+        # (agent.run() is sync in a thread, so we use a thread-safe list)
+        import threading
+        pending_files: list = []
+        pending_files_lock = threading.Lock()
+
+        def _on_tool_call(tool_name, tool_args, tool_result):
+            """Callback: intercept send_file_to_user tool results."""
+            if not self._openapi:
+                return
+            meta = getattr(tool_result, "metadata", None) or {}
+            if meta.get("send_file_to_user"):
+                # Extract file info from metadata
+                file_info = {
+                    "source_path": meta.get("source_path", ""),
+                    "upload_path": meta.get("upload_path", ""),
+                    "filename": meta.get("filename", ""),
+                    "file_type": meta.get("file_type", "file"),
+                    "size": meta.get("size", 0),
+                }
+                with pending_files_lock:
+                    pending_files.append(file_info)
+
+        agent.on_tool_call = _on_tool_call
+
         try:
             loop = asyncio.get_event_loop()
             response_text = await loop.run_in_executor(
@@ -199,6 +224,8 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] Agent error: %s", exc)
             response_text = "⚠️ 处理消息时出错，请稍后重试"
+        finally:
+            agent.on_tool_call = None
 
         reply_text = response_text or "(no response)"
         # reply_text() is sync (uses requests.post), run in executor to avoid
@@ -208,9 +235,12 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             None, lambda: self.reply_text(reply_text, incoming)
         )
 
-        # If the agent produced file paths in its response, try to send them
-        # as file attachments via OpenAPI
-        if self._openapi and hasattr(incoming, "conversation_id"):
+        # Send files that the agent produced via send_file_to_user tool
+        if self._openapi and pending_files and conversation_id:
+            for file_info in pending_files:
+                await self._send_file_via_openapi(file_info, conversation_id)
+        # Fallback: parse file paths from response text (legacy [file:...] markers)
+        elif self._openapi and hasattr(incoming, "conversation_id"):
             await self._try_send_files_from_response(
                 response_text, incoming
             )
@@ -275,7 +305,55 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 )
 
     # ------------------------------------------------------------------
-    # File message handling
+    # File message handling (incoming)
+    # ------------------------------------------------------------------
+
+    async def _send_file_via_openapi(
+        self, file_info: dict, conversation_id: str
+    ) -> None:
+        """
+        Upload and send a single file to a DingTalk conversation via OpenAPI.
+
+        Uses the file path from send_file_to_user metadata.
+        """
+        source_path = file_info.get("source_path") or file_info.get("upload_path", "")
+        file_name = file_info.get("filename", "")
+        file_type = file_info.get("file_type", "file")
+
+        if not source_path or not os.path.isfile(source_path):
+            self._logger.warning(
+                "[dingtalk][stream] File not found for sending: %s", source_path
+            )
+            return
+
+        try:
+            media_id = await self._openapi.upload_file(
+                file_path=source_path,
+                file_name=file_name or os.path.basename(source_path),
+            )
+            is_image = file_type == "image" or any(
+                (file_name or source_path).lower().endswith(ext)
+                for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
+            )
+            await self._openapi.send_file_to_group(
+                robot_code=self._robot_code,
+                conversation_id=conversation_id,
+                media_id=media_id,
+                file_name=file_name or os.path.basename(source_path),
+                is_image=is_image,
+            )
+            self._logger.info(
+                "[dingtalk][stream] Sent file via send_file_to_user: %s",
+                file_name or source_path,
+            )
+        except Exception as exc:
+            self._logger.error(
+                "[dingtalk][stream] Failed to send file %s: %s",
+                file_name or source_path, exc,
+            )
+
+    # ------------------------------------------------------------------
+    # File message handling (incoming)
     # ------------------------------------------------------------------
 
     async def _handle_file_message(

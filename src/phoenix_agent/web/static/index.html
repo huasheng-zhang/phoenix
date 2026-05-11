@@ -912,7 +912,13 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     try{
       const h={};const t=sessionStorage.getItem('phoenix_token');if(t)h['Authorization']='Bearer '+t;
       const r=await fetch('/api/upload',{method:'POST',headers:h,body:fd});
-      if(!r.ok){console.error('Upload failed');return null}
+      if(!r.ok){
+        let errMsg='Upload failed: HTTP '+r.status;
+        try{const e=await r.json();errMsg+=' - '+JSON.stringify(e)}catch(_){errMsg+=' - '+r.statusText}
+        console.error(errMsg);
+        if(typeof showToast==='function')showToast(errMsg,'error');
+        return null
+      }
       return await r.json();
     }catch(e){console.error('Upload error',e);return null}
   }
@@ -1528,7 +1534,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
               else if(tr.metadata&&tr.metadata.needs_confirmation&&tr.metadata.command){
                 bContent.innerHTML=mentionCards+agentCards+renderProgress(progressSteps,currentIter,maxIter)+(full?renderMd(full):'')+renderConfirmCard(tr.metadata.command);
                 confirmShown=true;
-              }else if(tr.metadata&&tr.metadata.send_file){
+              }else if(tr.metadata&&(tr.metadata.send_file_to_user||tr.metadata.send_file)){
                 bContent.innerHTML=mentionCards+agentCards+renderProgress(progressSteps,currentIter,maxIter)+(full?renderMd(full):'')+renderSentFileCard(tr);
                 full+='\n\n[File: '+(tr.metadata.filename||'file')+']';
               }else{

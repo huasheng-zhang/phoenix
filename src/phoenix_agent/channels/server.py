@@ -422,7 +422,7 @@ async def _process_message(channel, pool, message) -> None:
     Each ``(channel_name, platform_id)`` pair gets its own Agent, ensuring
     complete context isolation between conversations.
     """
-    from phoenix_agent.channels.base import ChannelReply
+    from phoenix_agent.channels.base import ChannelFile, ChannelReply
 
     chat_id   = message.platform_id
     user_text = message.text.strip()
@@ -439,13 +439,32 @@ async def _process_message(channel, pool, message) -> None:
     # Get or create a per-conversation agent
     agent = pool.get_agent(message.channel, chat_id)
 
+    # Collect files produced by send_file_to_user tool during agent.run()
+    pending_files: list = []
+
+    def _on_tool_call(tool_name, tool_args, tool_result):
+        """Callback: intercept send_file_to_user tool results."""
+        meta = getattr(tool_result, "metadata", None) or {}
+        if meta.get("send_file_to_user"):
+            pending_files.append(ChannelFile(
+                path=meta.get("source_path") or meta.get("upload_path", ""),
+                url=meta.get("download_url", ""),
+                file_type=meta.get("file_type", "file"),
+                file_name=meta.get("filename", ""),
+            ))
+
+    agent.on_tool_call = _on_tool_call
+
     try:
         loop = asyncio.get_event_loop()
         response_text = await loop.run_in_executor(
             None,
             lambda: agent.run(user_text),
         )
-        reply = ChannelReply(text=response_text or "(no response)")
+        reply = ChannelReply(
+            text=response_text or "(no response)",
+            files=pending_files,
+        )
         await channel.send_message(chat_id, reply)
     except Exception as exc:
         logger.exception("[server] Error processing message: %s", exc)
@@ -454,3 +473,5 @@ async def _process_message(channel, pool, message) -> None:
             await channel.send_message(chat_id, err_reply)
         except Exception:
             pass
+    finally:
+        agent.on_tool_call = None
