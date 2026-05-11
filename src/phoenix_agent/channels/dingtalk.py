@@ -329,10 +329,10 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         try:
             # Use robot_code from OpenAPI client as fallback (more reliable source)
             robot_code = self._robot_code or getattr(self._openapi, "_client_id", "")
-            self._logger.debug(
+            self._logger.info(
                 "[dingtalk][stream] Sending file: robot_code=%s, conv=%s, file=%s",
-                robot_code[:8] + "..." if len(robot_code) > 8 else robot_code,
-                conversation_id[:12] if conversation_id else "None",
+                robot_code[:8] + "..." if len(robot_code) > 8 else robot_code or "(EMPTY)",
+                conversation_id[:12] if conversation_id else "(EMPTY)",
                 file_name or os.path.basename(source_path),
             )
             media_id = await self._openapi.upload_file(
@@ -753,6 +753,11 @@ class DingTalkChannel(BaseChannel):
             download_dir=self._download_dir,
             robot_code=self._client_id,
             channel_ref=self,  # Pass self for session tracking
+        )
+        logger.info(
+            "[dingtalk][stream] Handler created: robot_code=%s, openapi=%s",
+            self._client_id[:8] + "..." if self._client_id else "(EMPTY)",
+            "yes" if self._openapi else "no",
         )
 
         # Capture the event loop reference for cross-thread dispatch
