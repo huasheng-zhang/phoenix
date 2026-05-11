@@ -1344,7 +1344,7 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
     const card=document.getElementById(id);if(!card)return;
     card.querySelectorAll('button').forEach(b=>{b.disabled=true;b.style.opacity='.5'});
     const cmd=window['__cfCmd_'+id]||card.querySelector('.confirm-cmd').textContent;
-    inputEl.value='confirm: '+cmd;sendMessage(0);
+    const inp=panelInput(0);if(inp){inp.value='confirm: '+cmd;sendMessage(0);}
   };
   window.handleCancel=function(id){
     const card=document.getElementById(id);
