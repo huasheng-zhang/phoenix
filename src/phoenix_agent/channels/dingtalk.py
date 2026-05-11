@@ -152,6 +152,11 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         conversation_id = str(getattr(incoming, "conversation_id", "") or "")
         chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
 
+        # conversationType: "1" = group chat, "2" = single chat (1-on-1)
+        is_group = str(getattr(incoming, "conversation_type", "1")) == "1"
+        # robot_code from the stream message (most reliable source)
+        robot_code = getattr(incoming, "robot_code", "") or self._robot_code
+
         self._logger.info(
             "[dingtalk][stream] Message from %s (%s): msgtype=%s, conv=%s",
             sender_name, sender_id, msg_type_raw,
@@ -236,9 +241,17 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         )
 
         # Send files that the agent produced via send_file_to_user tool
-        if self._openapi and pending_files and conversation_id:
+        if self._openapi and pending_files:
             for file_info in pending_files:
-                await self._send_file_via_openapi(file_info, conversation_id)
+                if is_group and conversation_id:
+                    await self._send_file_via_openapi(
+                        file_info, conversation_id, robot_code,
+                    )
+                elif sender_id:
+                    # Single chat: use send_file_to_single with user_id
+                    await self._send_file_to_single(
+                        file_info, sender_id, robot_code,
+                    )
         # Fallback: parse file paths from response text (legacy [file:...] markers)
         elif self._openapi and hasattr(incoming, "conversation_id"):
             await self._try_send_files_from_response(
@@ -309,12 +322,10 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
     # ------------------------------------------------------------------
 
     async def _send_file_via_openapi(
-        self, file_info: dict, conversation_id: str
+        self, file_info: dict, conversation_id: str, robot_code: str = "",
     ) -> None:
         """
-        Upload and send a single file to a DingTalk conversation via OpenAPI.
-
-        Uses the file path from send_file_to_user metadata.
+        Upload and send a single file to a DingTalk GROUP conversation via OpenAPI.
         """
         source_path = file_info.get("source_path") or file_info.get("upload_path", "")
         file_name = file_info.get("filename", "")
@@ -327,12 +338,11 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             return
 
         try:
-            # Use robot_code from OpenAPI client as fallback (more reliable source)
-            robot_code = self._robot_code or getattr(self._openapi, "_client_id", "")
+            rc = robot_code or self._robot_code or getattr(self._openapi, "_client_id", "")
             self._logger.info(
-                "[dingtalk][stream] Sending file: robot_code=%s, conv=%s, file=%s",
-                robot_code[:8] + "..." if len(robot_code) > 8 else robot_code or "(EMPTY)",
-                conversation_id[:12] if conversation_id else "(EMPTY)",
+                "[dingtalk][stream] Sending file to GROUP: robot_code=%s, conv_id=%s, file=%s",
+                rc[:8] + "..." if len(rc) > 8 else rc or "(EMPTY)",
+                conversation_id,
                 file_name or os.path.basename(source_path),
             )
             media_id = await self._openapi.upload_file(
@@ -344,7 +354,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
             )
             await self._openapi.send_file_to_group(
-                robot_code=robot_code,
+                robot_code=rc,
                 conversation_id=conversation_id,
                 media_id=media_id,
                 file_name=file_name or os.path.basename(source_path),
@@ -356,8 +366,63 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             )
         except Exception as exc:
             self._logger.error(
-                "[dingtalk][stream] Failed to send file %s: %s",
-                file_name or source_path, exc,
+                "[dingtalk][stream] Failed to send file to GROUP %s (robot_code=%s, conv=%s): %s",
+                file_name or source_path,
+                rc,
+                conversation_id,
+                exc,
+            )
+
+    async def _send_file_to_single(
+        self, file_info: dict, sender_id: str, robot_code: str = "",
+    ) -> None:
+        """
+        Upload and send a single file to a DingTalk SINGLE chat (1-on-1) via OpenAPI.
+        """
+        source_path = file_info.get("source_path") or file_info.get("upload_path", "")
+        file_name = file_info.get("filename", "")
+        file_type = file_info.get("file_type", "file")
+
+        if not source_path or not os.path.isfile(source_path):
+            self._logger.warning(
+                "[dingtalk][stream] File not found for sending: %s", source_path
+            )
+            return
+
+        try:
+            rc = robot_code or self._robot_code or getattr(self._openapi, "_client_id", "")
+            self._logger.info(
+                "[dingtalk][stream] Sending file to SINGLE: robot_code=%s, user=%s, file=%s",
+                rc[:8] + "..." if len(rc) > 8 else rc or "(EMPTY)",
+                sender_id,
+                file_name or os.path.basename(source_path),
+            )
+            media_id = await self._openapi.upload_file(
+                file_path=source_path,
+                file_name=file_name or os.path.basename(source_path),
+            )
+            is_image = file_type == "image" or any(
+                (file_name or source_path).lower().endswith(ext)
+                for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
+            )
+            await self._openapi.send_file_to_single(
+                robot_code=rc,
+                user_ids=[sender_id],
+                media_id=media_id,
+                file_name=file_name or os.path.basename(source_path),
+                is_image=is_image,
+            )
+            self._logger.info(
+                "[dingtalk][stream] Sent file to single chat: %s",
+                file_name or source_path,
+            )
+        except Exception as exc:
+            self._logger.error(
+                "[dingtalk][stream] Failed to send file to SINGLE %s (robot_code=%s, user=%s): %s",
+                file_name or source_path,
+                rc,
+                sender_id,
+                exc,
             )
 
     # ------------------------------------------------------------------
@@ -531,6 +596,7 @@ class DingTalkChannel(BaseChannel):
         self._app_secret:     Optional[str]  = cfg.get("app_secret")
         self._client_id:      Optional[str]  = cfg.get("client_id") or self._app_key
         self._client_secret:  Optional[str]  = cfg.get("client_secret") or self._app_secret
+        self._robot_code_cfg: Optional[str]  = cfg.get("robot_code", "")
         self._webhook_path:   str            = cfg.get("webhook_path", "/dingtalk/webhook")
         self._at_all:         bool           = cfg.get("at_all", False)
         self._download_dir:   str            = cfg.get(
@@ -640,7 +706,7 @@ class DingTalkChannel(BaseChannel):
 
         Uploads each file and sends it as a separate robot message.
         """
-        robot_code = self._client_id or ""
+        robot_code = self._robot_code_cfg or self._client_id or ""
 
         for f in reply.files:
             try:
@@ -751,12 +817,12 @@ class DingTalkChannel(BaseChannel):
             channel_name=self.NAME,
             openapi=self._openapi,
             download_dir=self._download_dir,
-            robot_code=self._client_id,
+            robot_code=self._robot_code_cfg or self._client_id,
             channel_ref=self,  # Pass self for session tracking
         )
         logger.info(
             "[dingtalk][stream] Handler created: robot_code=%s, openapi=%s",
-            self._client_id[:8] + "..." if self._client_id else "(EMPTY)",
+            (self._robot_code_cfg or self._client_id)[:8] + "...",
             "yes" if self._openapi else "no",
         )
 

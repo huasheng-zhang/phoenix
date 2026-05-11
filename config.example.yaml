@@ -153,6 +153,7 @@ channels:
     # ---- stream mode (长连接，推荐！不需要公网 HTTPS 地址) ----
     client_id: ""                         # 应用 Client ID (= app_key)
     client_secret: ""                      # 应用 Client Secret
+    # robot_code: ""                       # 机器人标识码（在开发者后台"机器人与消息推送"页面查看，不同于 client_id）
 
     # ---- webhook mode (推送模式，只能发不能收) ----
     # webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
