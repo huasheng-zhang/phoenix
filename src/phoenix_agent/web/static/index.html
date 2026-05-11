@@ -2492,23 +2492,34 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
   }
 
   // --- Save config functions ---
+  // Helper: skip sending a secret field if it still contains the masked value
+  function _secretOrClear(id,original){
+    const v=document.getElementById(id).value;
+    // If value contains "***" (mask) and wasn't changed, omit it entirely
+    if(v&&v.includes('***')&&original&&original.includes('***'))return undefined;
+    return v||null;
+  }
   window.saveProviderConfig=async function(){
+    const rawKey=currentConfig?.provider?.api_key||'';
     const data={
       type:document.getElementById('cfgProviderType').value,
       model:document.getElementById('cfgModel').value,
-      api_key:document.getElementById('cfgApiKey').value,
       base_url:document.getElementById('cfgBaseUrl').value||null,
       max_tokens:parseInt(document.getElementById('cfgMaxTokens').value)||8192,
       timeout:parseInt(document.getElementById('cfgTimeout').value)||120,
     };
+    const apiKey=_secretOrClear('cfgApiKey',rawKey);
+    if(apiKey!==undefined)data.api_key=apiKey;
     await saveConfigSection('provider',data);
   };
   window.saveWebSearchConfig=async function(){
+    const rawKey=currentConfig?.web_search?.api_key||'';
     const data={
       provider:document.getElementById('cfgWsProvider').value,
-      api_key:document.getElementById('cfgWsApiKey').value||null,
       max_results:parseInt(document.getElementById('cfgWsMaxResults').value)||5,
     };
+    const apiKey=_secretOrClear('cfgWsApiKey',rawKey);
+    if(apiKey!==undefined)data.api_key=apiKey;
     await saveConfigSection('web_search',data);
   };
   window.saveAgentConfig=async function(){

@@ -1068,6 +1068,23 @@ def build_web_routes(pool, config=None) -> list:
             # Ensure parent directory exists
             config_path.parent.mkdir(parents=True, exist_ok=True)
 
+            # Protect sensitive fields: if the incoming value looks like a
+            # masked secret (e.g. "sk-***Gh3"), keep the original value from
+            # the existing file instead of overwriting it with the mask.
+            _secret_keys = {"api_key", "client_secret", "app_secret",
+                            "corp_secret", "bot_token", "access_token",
+                            "secret", "token", "encoding_aes_key",
+                            "webhook_secret"}
+            existing_section = file_data.get(section, {})
+            if isinstance(existing_section, dict):
+                for key in _secret_keys:
+                    val = data.get(key)
+                    if (val and isinstance(val, str)
+                            and "***" in val
+                            and key in existing_section):
+                        # Incoming value is a mask — preserve the real one
+                        data[key] = existing_section[key]
+
             # Merge the new section
             file_data[section] = data
             config_path.write_text(
