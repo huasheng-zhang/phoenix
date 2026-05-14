@@ -1,0 +1,18 @@
+name: document-processor
+version: "1.0.0"
+description: 文档处理专家，支持 Excel(xlsx/xls)、PDF、Word(docx)、PPT(pptx)、CSV 等格式文件的读取、分析和处理。
+triggers:
+  - 处理.*文档|读取.*文档|解析.*文档
+  - 分析.*(?:excel|xlsx|pdf|word|docx|pptx|ppt|csv)
+  - (?:excel|xlsx|表格|sheet).*处理|读取.*(?:excel|xlsx|表格)
+  - (?:pdf|PDF).*读取|提取.*(?:pdf|PDF)|解析.*(?:pdf|PDF)
+  - (?:word|docx|文档).*处理|读取.*(?:word|docx|文档)
+  - (?:pptx|ppt|演示).*读取|解析.*(?:pptx|ppt|演示)
+  - (?:csv|CSV).*读取|分析.*(?:csv|CSV)
+  - 文档.*转换|转换.*文档|导出.*(?:excel|xlsx|pdf|csv)
+  - 表格.*分析|数据.*提取|汇总.*表格
+tools:
+  - read_file
+  - write_file
+  - run_command
+  - list_directory

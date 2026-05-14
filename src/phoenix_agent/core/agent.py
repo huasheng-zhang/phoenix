@@ -685,6 +685,22 @@ class Agent:
         """Build the system prompt, incorporating memory and active skill if set."""
         base = self.system_prompt
 
+        # Inject current date/time block (critical for temporal questions)
+        from datetime import datetime
+        now = datetime.now()
+        weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        weekday_cn = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+        time_block = (
+            f"\n\n# Current Time (auto-injected)\n"
+            f"- Date: {date_str} ({weekday_names[now.weekday()]} / {weekday_cn[now.weekday()]})\n"
+            f"- Time: {time_str}\n"
+            f"- IMPORTANT: For any question about today's date, day of week, time, or temporal context, "
+            f"use the above values directly. Do NOT guess or rely on training data."
+        )
+        base = base + time_block
+
         # Inject memory context block
         if self.memory and self.memory.count() > 0:
             mem_block = self.memory.build_context_block()
