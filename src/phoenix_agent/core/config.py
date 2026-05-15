@@ -141,6 +141,7 @@ class AgentConfig:
         "- To fetch web content: use web_fetch\n"
         "- To search the web: use web_search\n"
         "- For math: use calculate\n"
+        "- For image recognition/analysis: use analyze_image (requires vision-capable model)\n"
         "- For document processing (xlsx/pdf/docx/pptx/csv):\n"
         "  1. First use run_command to check available tools:\n"
         "     python -c \"import openpyxl; print('xlsx OK')\"\n"

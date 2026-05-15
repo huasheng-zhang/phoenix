@@ -2684,6 +2684,22 @@ textarea.form-input{min-height:80px;resize:vertical;line-height:1.5}
         for(const f of e.dataTransfer.files){const r=await uploadFile(f);if(r)pendingFilesMap[idx].push(r)}
         renderAttachPreview(idx);
       });
+      // Support pasting images from clipboard
+      newIn.addEventListener('paste',async function(e){
+        const items=e.clipboardData?.items;
+        if(!items)return;
+        const imageFiles=[];
+        for(const item of items){
+          if(item.type.startsWith('image/')){
+            const f=item.getAsFile();
+            if(f)imageFiles.push(f);
+          }
+        }
+        if(!imageFiles.length)return;
+        if(!pendingFilesMap[idx])pendingFilesMap[idx]=[];
+        for(const f of imageFiles){const r=await uploadFile(f);if(r)pendingFilesMap[idx].push(r)}
+        renderAttachPreview(idx);
+      });
       newIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){if(handleMentionKeydown(idx,e))return;e.preventDefault();sendMessage(idx)}});
       newIn.addEventListener('input',function(){autoResizeInput(idx);handleMentionInput(idx)});
       newIn.addEventListener('blur',function(){setTimeout(hideMentionDropdown,150)});

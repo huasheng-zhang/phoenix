@@ -120,6 +120,8 @@ class Message:
         reasoning: Optional reasoning/thinking content.
         finish_reason: Why the message generation stopped.
         metadata: Additional metadata dictionary.
+        images: Optional list of image dicts for multimodal messages.
+                Each dict: {"path": str} or {"url": str} or {"base64": str, "mime": str}.
     """
     role: Role
     content: str = ""
@@ -130,6 +132,7 @@ class Message:
     reasoning: Optional[str] = None
     finish_reason: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    images: Optional[List[Dict[str, Any]]] = None
 
     # Auto-generated fields
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -159,11 +162,57 @@ class Message:
         Convert message to dictionary format.
 
         Returns OpenAI-compatible message format.
+        When images are present on a user message, content becomes a
+        multimodal array: [{"type":"text",...}, {"type":"image_url",...}].
         """
         result: Dict[str, Any] = {"role": self.role.value}
 
-        # Handle content
-        if self.tool_calls:
+        # Handle multimodal content (text + images)
+        if self.images and self.role == Role.USER:
+            import base64
+            content_parts: List[Dict[str, Any]] = []
+            # Add text part first
+            if self.content:
+                content_parts.append({"type": "text", "text": self.content})
+            # Add image parts
+            for img in self.images:
+                if img.get("url"):
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": img["url"]},
+                    })
+                elif img.get("base64"):
+                    mime = img.get("mime", "image/png")
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{img['base64']}"},
+                    })
+                elif img.get("path"):
+                    # Read local file and encode
+                    try:
+                        from pathlib import Path as _P
+                        p = _P(img["path"])
+                        suffix = p.suffix.lower()
+                        mime_map = {
+                            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                            ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+                        }
+                        mime = mime_map.get(suffix, "image/png")
+                        b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{b64}"},
+                        })
+                    except Exception:
+                        content_parts.append({
+                            "type": "text",
+                            "text": f"[Failed to load image: {img['path']}]",
+                        })
+            if content_parts:
+                result["content"] = content_parts
+            else:
+                result["content"] = ""
+        elif self.tool_calls:
             result["tool_calls"] = [tc.to_dict() for tc in self.tool_calls]
             if self.content:
                 result["content"] = self.content
@@ -226,6 +275,7 @@ class Message:
             reasoning=data.get("reasoning"),
             finish_reason=data.get("finish_reason"),
             metadata=data.get("metadata", {}),
+            images=data.get("images"),
         )
 
     @classmethod
@@ -234,9 +284,9 @@ class Message:
         return cls(role=Role.SYSTEM, content=content)
 
     @classmethod
-    def user(cls, content: str) -> "Message":
-        """Create a user message."""
-        return cls(role=Role.USER, content=content)
+    def user(cls, content: str, images: Optional[List[Dict[str, Any]]] = None) -> "Message":
+        """Create a user message, optionally with images for multimodal."""
+        return cls(role=Role.USER, content=content, images=images)
 
     @classmethod
     def assistant(cls, content: str = "", tool_calls: Optional[List[ToolCall]] = None) -> "Message":

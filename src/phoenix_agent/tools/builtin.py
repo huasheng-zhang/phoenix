@@ -1233,6 +1233,105 @@ def _register_utility_tools(registry: ToolRegistry) -> None:
           "required": ["query"]},
          ToolCategory.UTILITY, recall_memory)
 
+    # ---- analyze_image ----------------------------------------------------
+    def analyze_image(image_path: str, prompt: str = "") -> str:
+        """
+        Analyze an image file using the LLM's vision capability.
+
+        Reads the image, encodes it as base64, and sends it to the configured
+        LLM for analysis.  Requires a vision-capable model (e.g. gpt-4o,
+        qwen2-vl, claude-sonnet-4).
+
+        Args:
+            image_path: Path to the image file (png/jpg/jpeg/gif/webp/bmp).
+            prompt: Optional custom question about the image.  Defaults to
+                    "Describe this image in detail."
+        """
+        import base64 as _b64
+
+        question = prompt.strip() or "Describe this image in detail."
+
+        # Resolve and validate path
+        resolved, err = _safe_path(image_path)
+        if err:
+            return ToolResult(success=False, content="", error=err).to_json()
+        if not resolved or not resolved.is_file():
+            return ToolResult(success=False, content="",
+                              error=f"File not found: {image_path}").to_json()
+
+        # Determine MIME type
+        suffix = resolved.suffix.lower()
+        mime_map = {
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+        }
+        mime = mime_map.get(suffix)
+        if not mime:
+            return ToolResult(success=False, content="",
+                              error=f"Unsupported image format: {suffix}").to_json()
+
+        # Check file size (max 20 MB)
+        size = resolved.stat().st_size
+        if size > 20 * 1024 * 1024:
+            return ToolResult(success=False, content="",
+                              error=f"Image too large: {size / 1024 / 1024:.1f} MB (max 20 MB)").to_json()
+
+        # Read and encode
+        try:
+            img_data = _b64.b64encode(resolved.read_bytes()).decode("ascii")
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Failed to read image: {exc}").to_json()
+
+        # Build multimodal message and call LLM
+        vision_message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": question},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:{mime};base64,{img_data}"
+                }},
+            ],
+        }
+
+        try:
+            from phoenix_agent.core.config import get_config
+            from phoenix_agent.providers.openai import create_provider
+            cfg = get_config()
+            provider = create_provider(cfg.provider.type, {
+                "api_key": cfg.provider.api_key or "",
+                "model": cfg.provider.model,
+                "base_url": cfg.provider.base_url,
+                "timeout": cfg.provider.timeout,
+            })
+            resp = provider.complete(
+                messages=[vision_message],
+                temperature=0.3,
+                max_tokens=4096,
+            )
+            description = resp.content or "(no description returned)"
+            return ToolResult(
+                success=True,
+                content=description,
+                metadata={"image_path": str(resolved), "mime": mime, "size": size},
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Vision API call failed: {exc}").to_json()
+
+    _reg(registry, "analyze_image",
+         "Analyze an image file using the LLM's vision capability. "
+         "Requires a vision-capable model (e.g. gpt-4o, qwen2-vl, claude-sonnet-4).",
+         {"type": "object",
+          "properties": {
+              "image_path": {"type": "string",
+                             "description": "Path to the image file (png/jpg/jpeg/gif/webp/bmp)"},
+              "prompt":    {"type": "string",
+                             "description": "Question about the image (default: describe in detail)"},
+          },
+          "required": ["image_path"]},
+         ToolCategory.UTILITY, analyze_image)
+
 
 # ---------------------------------------------------------------------------
 # SCHEDULER TOOLS  (read / write config.yaml; server restart required to apply)

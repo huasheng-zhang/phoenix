@@ -372,6 +372,7 @@ def build_web_routes(pool, config=None) -> list:
         session_id = body.get("session_id", "")
         attachments = body.get("attachments", [])
         agent_name = body.get("agent_name", "")
+        images = body.get("images", [])  # [{path, url, base64, mime}]
 
         if not message and not attachments:
             return JSONResponse({"error": "message or attachments required"}, status_code=400)
@@ -386,19 +387,34 @@ def build_web_routes(pool, config=None) -> list:
         if agent_name:
             _apply_custom_agent(agent, agent_name)
 
+        # Build image list for multimodal (path-based images)
+        multimodal_images = None
+        if images:
+            multimodal_images = images
+
         if attachments:
             file_lines = []
             for att in attachments:
-                file_lines.append(f"[File: {att.get('filename', 'unknown')} "
-                                  f"({att.get('size', 0)} bytes) "
-                                  f"at {att.get('file_path', '')}]")
+                # If attachment is an image, add to multimodal_images
+                ft = att.get("file_type", "")
+                if ft == "image" and att.get("file_path"):
+                    if multimodal_images is None:
+                        multimodal_images = []
+                    multimodal_images.append({"path": att["file_path"]})
+                    file_lines.append(f"[Image: {att.get('filename', 'unknown')} "
+                                      f"({att.get('size', 0)} bytes) "
+                                      f"at {att.get('file_path', '')}]")
+                else:
+                    file_lines.append(f"[File: {att.get('filename', 'unknown')} "
+                                      f"({att.get('size', 0)} bytes) "
+                                      f"at {att.get('file_path', '')}]")
             attachment_context = "\n".join(file_lines)
             message = (message + "\n\n" + attachment_context) if message else attachment_context
 
         try:
             loop = asyncio.get_event_loop()
             response_text = await loop.run_in_executor(
-                None, lambda: agent.run(message),
+                None, lambda: agent.run(message, images=multimodal_images),
             )
             return JSONResponse({
                 "response": response_text or "",
@@ -425,6 +441,7 @@ def build_web_routes(pool, config=None) -> list:
         session_id = body.get("session_id", "")
         attachments = body.get("attachments", [])  # [{filename, file_path, file_type, size}]
         agent_name = body.get("agent_name", "")
+        images = body.get("images", [])  # [{path, url, base64, mime}]
 
         if not message and not attachments:
             return PlainTextResponse("message or attachments required", status_code=400)
@@ -442,13 +459,27 @@ def build_web_routes(pool, config=None) -> list:
             if ca:
                 active_agent_name = agent_name
 
+        # Build image list for multimodal
+        multimodal_images = None
+        if images:
+            multimodal_images = images
+
         # Inject file info into message so LLM knows about attachments
         if attachments:
             file_lines = []
             for att in attachments:
-                file_lines.append(f"[File: {att.get('filename', 'unknown')} "
-                                  f"({att.get('size', 0)} bytes) "
-                                  f"at {att.get('file_path', '')}]")
+                ft = att.get("file_type", "")
+                if ft == "image" and att.get("file_path"):
+                    if multimodal_images is None:
+                        multimodal_images = []
+                    multimodal_images.append({"path": att["file_path"]})
+                    file_lines.append(f"[Image: {att.get('filename', 'unknown')} "
+                                      f"({att.get('size', 0)} bytes) "
+                                      f"at {att.get('file_path', '')}]")
+                else:
+                    file_lines.append(f"[File: {att.get('filename', 'unknown')} "
+                                      f"({att.get('size', 0)} bytes) "
+                                      f"at {att.get('file_path', '')}]")
             attachment_context = "\n".join(file_lines)
             message = (message + "\n\n" + attachment_context) if message else attachment_context
 
@@ -589,7 +620,7 @@ def build_web_routes(pool, config=None) -> list:
                                 + (clean_message or "[User only used @mentions without additional instructions. "
                                   "Summarize the results above.]")
                             )
-                        response = agent.run(effective_msg)
+                        response = agent.run(effective_msg, images=multimodal_images)
                         # Send the final LLM text response
                         result_queue.put(("chunk", response or ""))
                     except Exception as exc:

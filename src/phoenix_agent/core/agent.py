@@ -359,6 +359,7 @@ class Agent:
         user_input: str,
         stream: Optional[bool] = None,
         max_iterations: Optional[int] = None,
+        images: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Run a conversation turn with the agent.
@@ -367,6 +368,8 @@ class Agent:
             user_input: User message.
             stream: Whether to stream output (default from config).
             max_iterations: Override max tool call iterations.
+            images: Optional list of image dicts for multimodal input.
+                    Each: {"path": str}, {"url": str}, or {"base64": str, "mime": str}.
 
         Returns:
             Final text response from the agent.
@@ -392,7 +395,7 @@ class Agent:
                 logger.debug("Skill auto-match failed, continuing without skill", exc_info=True)
 
         # Add user message to history
-        user_msg = Message.user(user_input)
+        user_msg = Message.user(user_input, images=images)
         self.history.add_message(user_msg)
         self.session.add_message(role="user", content=user_input)
 
