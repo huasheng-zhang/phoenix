@@ -225,16 +225,24 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         agent.on_tool_call = _on_tool_call
 
         try:
+            # Acquire per-conversation lock (cancels any in-flight task)
+            cancel_event = await self._pool.acquire_conversation_lock(
+                self._channel_name, chat_key
+            )
             loop = asyncio.get_event_loop()
             response_text = await loop.run_in_executor(
                 None,
-                lambda: agent.run(user_text),
+                lambda: agent.run(user_text, cancel_event=cancel_event),
             )
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] Agent error: %s", exc)
             response_text = "⚠️ 处理消息时出错，请稍后重试"
         finally:
             agent.on_tool_call = None
+            # Always release the conversation lock
+            self._pool.release_conversation_lock(
+                self._channel_name, chat_key
+            )
 
         reply_text = response_text or "(no response)"
         # reply_text() is sync (uses requests.post), run in executor to avoid
@@ -534,13 +542,20 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             agent = self._pool.get_agent(self._channel_name, chat_key)
 
             try:
+                cancel_event = await self._pool.acquire_conversation_lock(
+                    self._channel_name, chat_key
+                )
                 loop = asyncio.get_event_loop()
                 response_text = await loop.run_in_executor(
-                    None, lambda: agent.run(desc),
+                    None, lambda: agent.run(desc, cancel_event=cancel_event),
                 )
             except Exception as exc:
                 self._logger.exception("[dingtalk][stream] Agent error on file: %s", exc)
                 response_text = "⚠️ 处理文件时出错，请稍后重试"
+            finally:
+                self._pool.release_conversation_lock(
+                    self._channel_name, chat_key
+                )
 
             reply_text = response_text or "文件已收到，但未生成回复。"
             loop = asyncio.get_event_loop()

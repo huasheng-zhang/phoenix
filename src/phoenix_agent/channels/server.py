@@ -456,10 +456,14 @@ async def _process_message(channel, pool, message) -> None:
     agent.on_tool_call = _on_tool_call
 
     try:
+        # Acquire per-conversation lock (cancels any in-flight task)
+        cancel_event = await pool.acquire_conversation_lock(
+            message.channel, chat_id
+        )
         loop = asyncio.get_event_loop()
         response_text = await loop.run_in_executor(
             None,
-            lambda: agent.run(user_text),
+            lambda: agent.run(user_text, cancel_event=cancel_event),
         )
         reply = ChannelReply(
             text=response_text or "(no response)",
@@ -475,3 +479,5 @@ async def _process_message(channel, pool, message) -> None:
             pass
     finally:
         agent.on_tool_call = None
+        # Always release the conversation lock
+        pool.release_conversation_lock(message.channel, chat_id)

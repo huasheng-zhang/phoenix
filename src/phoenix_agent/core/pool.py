@@ -35,6 +35,7 @@ Typical usage (inside ``server.py``)::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
@@ -71,6 +72,12 @@ class AgentPool:
         # (channel, chat_id) -> Agent
         self._pool: Dict[Tuple[str, str], "_AgentEntry"] = {}
         self._lock = threading.Lock()
+
+        # Per-conversation asyncio lock to serialise concurrent agent.run() calls.
+        # Also tracks the current cancel_event for in-flight tasks so new
+        # messages can cancel stale ones.
+        self._conversation_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
+        self._conversation_cancel: Dict[Tuple[str, str], threading.Event] = {}
 
         # Shared memory store (all agents see the same memories)
         self._memory = None
@@ -156,6 +163,59 @@ class AgentPool:
                 len(self._pool),
             )
             return agent
+
+    async def acquire_conversation_lock(
+        self, channel: str, chat_id: str
+    ) -> threading.Event:
+        """
+        Acquire a per-conversation lock, ensuring only one agent.run()
+        executes at a time for a given conversation.
+
+        If a previous run is still in progress, its cancel_event is set
+        before we wait for the lock, signaling it to stop ASAP.
+
+        Returns:
+            A new ``threading.Event`` that the caller should pass to
+            ``agent.run()`` as its ``cancel_event`` parameter.
+        """
+        key = (channel, chat_id)
+
+        # Cancel any in-flight task for this conversation
+        old_event = self._conversation_cancel.get(key)
+        if old_event is not None and not old_event.is_set():
+            logger.info(
+                "AgentPool: cancelling in-flight task for %s/%s",
+                channel, chat_id[:16],
+            )
+            old_event.set()  # Signal cancellation
+
+        # Get or create asyncio lock for this conversation
+        if key not in self._conversation_locks:
+            self._conversation_locks[key] = asyncio.Lock()
+
+        await self._conversation_locks[key].acquire()
+
+        # Create a fresh cancel_event for the new task
+        cancel_event = threading.Event()
+        self._conversation_cancel[key] = cancel_event
+
+        return cancel_event
+
+    def release_conversation_lock(
+        self, channel: str, chat_id: str
+    ) -> None:
+        """Release the per-conversation lock after agent.run() completes."""
+        key = (channel, chat_id)
+        # Clear cancel_event
+        self._conversation_cancel.pop(key, None)
+        # Release the asyncio lock
+        lock = self._conversation_locks.get(key)
+        if lock and lock.locked():
+            lock.release()
+        logger.debug(
+            "AgentPool: released conversation lock for %s/%s",
+            channel, chat_id[:16],
+        )
 
     def remove_agent(self, channel: str, chat_id: str) -> bool:
         """

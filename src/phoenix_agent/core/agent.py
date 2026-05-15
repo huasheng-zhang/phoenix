@@ -28,6 +28,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class AgentCancelled(Exception):
+    """Raised when the agent is cancelled mid-execution by an external signal."""
+    pass
+
+
 class Agent:
     """
     Main Phoenix Agent class.
@@ -360,6 +365,7 @@ class Agent:
         stream: Optional[bool] = None,
         max_iterations: Optional[int] = None,
         images: Optional[List[Dict[str, Any]]] = None,
+        cancel_event: Optional["threading.Event"] = None,
     ) -> str:
         """
         Run a conversation turn with the agent.
@@ -370,6 +376,9 @@ class Agent:
             max_iterations: Override max tool call iterations.
             images: Optional list of image dicts for multimodal input.
                     Each: {"path": str}, {"url": str}, or {"base64": str, "mime": str}.
+            cancel_event: Optional threading.Event. If set, the agent loop
+                          checks ``is_set()`` before each LLM call and tool
+                          execution and raises ``AgentCancelled`` if True.
 
         Returns:
             Final text response from the agent.
@@ -433,6 +442,9 @@ class Agent:
 
         while self.iteration_count < self.max_iterations:
             try:
+                # --- Check cancellation before each iteration ---
+                if cancel_event and cancel_event.is_set():
+                    raise AgentCancelled("Agent cancelled by user")
                 # --- Fire iteration callback (UI progress) ---
                 if self.on_iteration:
                     try:
@@ -508,13 +520,20 @@ class Agent:
                         self.session.add_message(role="assistant", content=final_response)
                         break
 
-                    tool_result_msgs = self._execute_tool_calls(response.tool_calls)
+                    tool_result_msgs = self._execute_tool_calls(response.tool_calls, cancel_event=cancel_event)
                     # Append tool results AFTER the assistant message (already done above)
                     messages_for_api.extend(tool_result_msgs)
                     self.iteration_count += 1
                 else:
                     # No more tool calls — agent is done
                     break
+
+            except AgentCancelled:
+                logger.info("Agent task cancelled")
+                # Remove the orphaned user message from history
+                if self.history.messages and self.history.messages[-1].role == Role.USER:
+                    self.history.messages.pop()
+                return "[任务已取消]"
 
             except Exception as e:
                 err_str = str(e).lower()
@@ -641,7 +660,7 @@ class Agent:
         if response.content:
             yield response.content
 
-    def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]], cancel_event=None) -> List[Dict[str, Any]]:
         """
         Execute tool calls from the LLM and return tool-result messages.
 
@@ -667,6 +686,10 @@ class Agent:
             tool_call_id  = tc.get("id", "")
 
             logger.info("Executing tool: %s", tool_name)
+
+            # --- Check cancellation before executing each tool ----------
+            if cancel_event and cancel_event.is_set():
+                raise AgentCancelled("Agent cancelled before tool execution")
 
             # --- Parse arguments ------------------------------------------
             # The LLM always sends arguments as a JSON-encoded string.
