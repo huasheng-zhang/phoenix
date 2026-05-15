@@ -89,6 +89,14 @@ class Agent:
         self.iteration_count = 0
         self.max_iterations = self.config.agent.max_iterations
 
+        # Token usage tracking (accumulated across iterations in one run)
+        self.accumulated_tokens: Dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        self.last_token_usage: Optional[Dict[str, int]] = None  # Last LLM call only
+
         # Plan mode: analyze without executing tools
         self.plan_mode: bool = self.config.agent.plan_mode
 
@@ -463,6 +471,20 @@ class Agent:
                     max_tokens=self.config.provider.max_tokens,
                 )
 
+                # --- Accumulate token usage --------------------------------
+                if response.usage:
+                    self.last_token_usage = response.usage
+                    self.accumulated_tokens["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
+                    self.accumulated_tokens["completion_tokens"] += response.usage.get("completion_tokens", 0)
+                    self.accumulated_tokens["total_tokens"] += response.usage.get("total_tokens", 0)
+                    logger.debug(
+                        "Token usage: prompt=%d, completion=%d, total=%d (accumulated: %d)",
+                        response.usage.get("prompt_tokens", 0),
+                        response.usage.get("completion_tokens", 0),
+                        response.usage.get("total_tokens", 0),
+                        self.accumulated_tokens["total_tokens"],
+                    )
+
                 # ----------------------------------------------------------------
                 # Build the assistant message dict to append to messages_for_api.
                 # OpenAI protocol requires that when the assistant returns tool
@@ -567,6 +589,30 @@ class Agent:
                 break
 
         return final_response
+
+    def get_token_usage(self) -> Dict[str, int]:
+        """
+        Return accumulated token usage for the last run() call.
+
+        Returns:
+            Dict with keys: prompt_tokens, completion_tokens, total_tokens.
+        """
+        return dict(self.accumulated_tokens)
+
+    def get_last_call_usage(self) -> Optional[Dict[str, int]]:
+        """
+        Return token usage for the LAST LLM call only (not accumulated).
+
+        Returns:
+            Dict with keys: prompt_tokens, completion_tokens, total_tokens.
+            None if no LLM call has been made yet.
+        """
+        return self.last_token_usage
+
+    def reset_token_usage(self):
+        """Reset accumulated token counters (call before run() if you want per-turn stats)."""
+        self.accumulated_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.last_token_usage = None
 
     # ==================================================================
     # Context window management

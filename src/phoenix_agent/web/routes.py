@@ -416,9 +416,16 @@ def build_web_routes(pool, config=None) -> list:
             response_text = await loop.run_in_executor(
                 None, lambda: agent.run(message, images=multimodal_images),
             )
+            # Get token usage statistics
+            token_usage = {}
+            try:
+                token_usage = agent.get_token_usage()
+            except Exception:
+                pass
             return JSONResponse({
                 "response": response_text or "",
                 "session_id": session_id or pool_key,
+                "token_usage": token_usage or {},
             })
         except Exception as exc:
             logger.exception("[web] Error in /api/chat")
@@ -654,6 +661,13 @@ def build_web_routes(pool, config=None) -> list:
                         elif msg_type == "error":
                             yield f"data: {json.dumps({'error': msg_data})}\n\n"
                         elif msg_type == "done":
+                            # Send token usage statistics before [DONE]
+                            try:
+                                token_usage = agent.get_token_usage()
+                                if token_usage and any(token_usage.values()):
+                                    yield f"data: {json.dumps({'token_usage': token_usage})}\n\n"
+                            except Exception:
+                                pass
                             yield "data: [DONE]\n\n"
                     except queue.Empty:
                         continue
@@ -837,6 +851,13 @@ def build_web_routes(pool, config=None) -> list:
                         elif msg_type == "collab_end":
                             yield f"data: {json.dumps({'collab_end': msg_data})}\n\n"
                         elif msg_type == "done":
+                            # Send token usage statistics before [DONE]
+                            try:
+                                token_usage = agent.get_token_usage()
+                                if token_usage and any(token_usage.values()):
+                                    yield f"data: {json.dumps({'token_usage': token_usage})}\n\n"
+                            except Exception:
+                                pass
                             yield "data: [DONE]\n\n"
                     except _queue.Empty:
                         continue
@@ -1609,6 +1630,13 @@ def build_web_routes(pool, config=None) -> list:
                         elif msg_type == "error":
                             yield f"data: {json.dumps({'error': msg_data})}\n\n"
                         elif msg_type == "done":
+                            # Send token usage statistics before [DONE]
+                            try:
+                                token_usage = agent.get_token_usage()
+                                if token_usage and any(token_usage.values()):
+                                    yield f"data: {json.dumps({'token_usage': token_usage})}\n\n"
+                            except Exception:
+                                pass
                             yield "data: [DONE]\n\n"
                     except _queue.Empty:
                         continue
