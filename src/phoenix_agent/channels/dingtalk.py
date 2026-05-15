@@ -150,7 +150,6 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
 
         # Extract conversation_id early — needed for both file and text handlers
         conversation_id = str(getattr(incoming, "conversation_id", "") or "")
-        chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
 
         # Detect group vs single chat:
         # - conversation_id starts with "cid" → single chat (1-on-1)
@@ -158,6 +157,22 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         # The conversationType field from stream is unreliable (often empty),
         # so we rely on the conversation_id prefix instead.
         is_group = bool(conversation_id) and not conversation_id.startswith("cid")
+
+        # Build chat_key for agent pool isolation.
+        # CRITICAL: For single-chat (1-on-1), use "user:{sender_id}" instead of
+        # "conv:{conversation_id}" because different users may share the same
+        # conversation_id from the DingTalk stream SDK. Using sender_id ensures
+        # each user gets their own agent and their messages don't cancel each other.
+        if conversation_id:
+            if is_group:
+                # Group chat — use conversation_id so all group members share
+                # the same agent session (serialised per group)
+                chat_key = f"conv:{conversation_id}"
+            else:
+                # Single chat (cid:...) — include sender_id to isolate per-user
+                chat_key = f"user:{sender_id}"
+        else:
+            chat_key = f"user:{sender_id}"
         # robot_code from the stream message (most reliable source)
         robot_code = getattr(incoming, "robot_code", "") or self._robot_code
 
