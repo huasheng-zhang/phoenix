@@ -252,8 +252,27 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             """Callback: intercept send_file_to_user tool results."""
             if not self._openapi:
                 return
-            meta = getattr(tool_result, "metadata", None) or {}
-            if meta.get("send_file_to_user"):
+            # tool_result may be:
+            #   - a ToolResult object (has .metadata attribute)
+            #   - a JSON string (from ToolResult.to_json())
+            #   - a dict (parsed JSON)
+            meta = {}
+            try:
+                if hasattr(tool_result, "metadata") and not isinstance(tool_result, dict):
+                    # Object with .metadata attribute (e.g. ToolResult dataclass/namedtuple)
+                    m = tool_result.metadata
+                    if isinstance(m, dict):
+                        meta = m
+                elif isinstance(tool_result, str):
+                    parsed = json.loads(tool_result)
+                    if isinstance(parsed, dict):
+                        meta = parsed.get("metadata", {})
+                elif isinstance(tool_result, dict):
+                    meta = tool_result.get("metadata", {})
+            except Exception:
+                pass
+
+            if meta and meta.get("send_file_to_user"):
                 # Extract file info from metadata
                 file_info = {
                     "source_path": meta.get("source_path", ""),
@@ -264,6 +283,10 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 }
                 with pending_files_lock:
                     pending_files.append(file_info)
+                self._logger.debug(
+                    "[dingtalk][stream] File captured via callback: %s",
+                    file_info.get("filename", ""),
+                )
 
         agent.on_tool_call = _on_tool_call
 
@@ -306,28 +329,45 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         )
 
         # Send files that the agent produced via send_file_to_user tool
-        if self._openapi and pending_files:
-            for file_info in pending_files:
-                if is_group and conversation_id:
-                    # Known group chat — send directly
-                    await self._send_file_via_openapi(
-                        file_info, conversation_id, robot_code,
+        # Read pending_files with lock — the callback appends from another thread
+        files_to_send = []
+        with pending_files_lock:
+            files_to_send = list(pending_files)
+
+        if self._openapi and files_to_send:
+            for file_info in files_to_send:
+                try:
+                    if is_group and conversation_id:
+                        # Known group chat — send directly
+                        await self._send_file_via_openapi(
+                            file_info, conversation_id, robot_code,
+                        )
+                    elif conversation_id:
+                        # Unknown type — try group first, fallback to single
+                        await self._send_file_auto(
+                            file_info, conversation_id, sender_id, robot_code,
+                        )
+                    elif sender_id:
+                        await self._send_file_to_single(
+                            file_info, sender_id, robot_code,
+                        )
+                except Exception as exc:
+                    self._logger.error(
+                        "[dingtalk][stream] Failed to send file %s: %s",
+                        file_info.get("filename", ""), exc,
                     )
-                elif conversation_id:
-                    # Unknown type (conversationType not set) — try group
-                    # first, fallback to single if robot not found
-                    await self._send_file_auto(
-                        file_info, conversation_id, sender_id, robot_code,
-                    )
-                elif sender_id:
-                    await self._send_file_to_single(
-                        file_info, sender_id, robot_code,
-                    )
+
         # Fallback: parse file paths from response text (legacy [file:...] markers)
-        elif self._openapi and hasattr(incoming, "conversation_id"):
-            await self._try_send_files_from_response(
-                response_text, incoming
-            )
+        # Only run if no files were captured by the callback
+        if not files_to_send and self._openapi and hasattr(incoming, "conversation_id"):
+            try:
+                await self._try_send_files_from_response(
+                    response_text, incoming,
+                )
+            except Exception as exc:
+                self._logger.error(
+                    "[dingtalk][stream] Fallback file send failed: %s", exc
+                )
 
     async def _try_send_files_from_response(self, response_text: str, incoming):
         """
