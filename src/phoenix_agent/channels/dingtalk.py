@@ -287,6 +287,16 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 self._channel_name, chat_key
             )
 
+        # CRITICAL: If the task was cancelled, don't send the "[任务已取消]"
+        # response. The new task will handle the reply. This prevents showing
+        # stale cancellation messages when a user sends consecutive messages.
+        if response_text == "[任务已取消]":
+            self._logger.info(
+                "[dingtalk][stream] Task cancelled for %s, skipping reply",
+                chat_key[:20],
+            )
+            return
+
         reply_text = response_text or "(no response)"
         # reply_text() is sync (uses requests.post), run in executor to avoid
         # blocking the event loop — this was causing slow responses
