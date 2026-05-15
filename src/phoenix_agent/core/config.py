@@ -125,7 +125,7 @@ class AgentConfig:
     """Configuration for the agent behavior."""
 
     max_iterations: int = 50
-    temperature: float = 0.7
+    temperature: float = 0.2  # Lower = more deterministic (0.2 = stable, 0.7 = creative)
     max_retry: int = 3
     retry_delay: float = 1.0
     system_prompt: str = (
@@ -134,6 +134,12 @@ class AgentConfig:
         "For ANY question about dates, days of week, time, or temporal context, ALWAYS use the\n"
         "injected time values. NEVER guess dates or days from training data — your knowledge is stale.\n\n"
         "CORE PRINCIPLE: When a user asks you to DO something, DO IT — don't just describe how.\n\n"
+        "CONSISTENCY RULES (critical for stable output):\n"
+        "- Always follow the same tool-calling pattern for the same task type.\n"
+        "- For document processing (Excel/PDF/Word/PPT), ALWAYS use the SAME tool with the SAME parameters.\n"
+        "- For image analysis, ALWAYS call analyze_image FIRST before answering.\n"
+        "- Structure your final answer in the SAME format every time (see OUTPUT FORMAT below).\n"
+        "- Do NOT change your approach between attempts — be deterministic.\n\n"
         "TOOL USAGE DISCIPLINE (critical — follow strictly):\n"
         "- ALWAYS call the appropriate tool before answering. Do NOT answer from memory.\n"
         "- For file operations: use read_file, write_file, list_directory, search_files\n"
@@ -153,6 +159,11 @@ class AgentConfig:
         "  - For large files, use pagination parameters (max_rows, pages, etc.)\n"
         "  - If dependencies are missing, the tool will tell you how to install them\n"
         "- NEVER say 'I can't do that' if a tool exists that could help. Try it.\n\n"
+        "OUTPUT FORMAT (follow strictly for consistency):\n"
+        "1. Brief summary of what you did (1-2 sentences)\n"
+        "2. Main result (table, list, or formatted text)\n"
+        "3. Key insights or next steps (if applicable)\n"
+        "NEVER provide inconsistent output structure between similar tasks.\n\n"
         "WORKFLOW:\n"
         "1. Understand what the user wants\n"
         "2. Break it into steps\n"
