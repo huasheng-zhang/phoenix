@@ -403,16 +403,6 @@ class Agent:
         effective_prompt = self._build_effective_system_prompt()
         system_msg = Message.system(effective_prompt)
 
-        # Build truncated history (respect context limits)
-        history_messages = self.history.get_truncated_messages(
-            max_messages=self.config.agent.max_history_messages,
-            max_tokens=self.config.agent.max_context_tokens,
-        )
-        messages_for_api = (
-            [system_msg.to_dict()]
-            + [msg.to_dict() for msg in history_messages]
-        )
-
         # Get tool definitions (skill-aware)
         enabled_tools = self._build_effective_tool_filter()
         tool_definitions = self.tools.get_definitions(
@@ -420,8 +410,26 @@ class Agent:
             disabled=self.config.tools.disabled,
         )
 
+        # --- Calculate token budget for history (reserve overhead) -----------
+        overhead_tokens = self._estimate_overhead_tokens(
+            system_prompt=effective_prompt,
+            tool_definitions=tool_definitions,
+        )
+        history_budget = self._resolve_history_budget(overhead_tokens)
+
+        # Build truncated history (respect context limits)
+        history_messages = self.history.get_truncated_messages(
+            max_messages=self.config.agent.max_history_messages,
+            max_tokens=history_budget,
+        )
+        messages_for_api = (
+            [system_msg.to_dict()]
+            + [msg.to_dict() for msg in history_messages]
+        )
+
         # Main agent loop
         final_response = ""
+        context_retry_count = 0  # Track context-exceeded retries
 
         while self.iteration_count < self.max_iterations:
             try:
@@ -509,11 +517,114 @@ class Agent:
                     break
 
             except Exception as e:
+                err_str = str(e).lower()
+                # --- Handle context window exceeded gracefully ----------------
+                if context_retry_count < 2 and (
+                    "context" in err_str and ("window" in err_str or "exceeded" in err_str or "too long" in err_str)
+                    or "input_tokens" in err_str
+                    or "badrequesterror" in err_str
+                ):
+                    context_retry_count += 1
+                    logger.warning(
+                        "Context window exceeded (attempt %d/2), trimming history aggressively",
+                        context_retry_count,
+                    )
+                    # Cut history budget by 50% each retry
+                    new_budget = max(history_budget // 2, 1000)
+                    history_messages = self.history.get_truncated_messages(
+                        max_messages=self.config.agent.max_history_messages,
+                        max_tokens=new_budget,
+                    )
+                    messages_for_api = (
+                        [system_msg.to_dict()]
+                        + [msg.to_dict() for msg in history_messages]
+                    )
+                    # Also rebuild tool definitions in case they contributed
+                    # (tools are fixed size, but rebuild for consistency)
+                    continue  # Retry the LLM call with trimmed context
+
                 logger.exception("Error in agent loop")
                 final_response = "I encountered an internal error while processing your request. Please try again."
                 break
 
         return final_response
+
+    # ==================================================================
+    # Context window management
+    # ==================================================================
+
+    # Default model context window sizes (tokens) for common models.
+    # Used when max_context_tokens=0 (auto) and no explicit config.
+    _DEFAULT_CONTEXT_WINDOWS: Dict[str, int] = {
+        "qwen3": 131072,
+        "qwen3.5": 131072,
+        "qwen2.5": 131072,
+        "deepseek": 65536,
+        "gpt-4o": 128000,
+        "gpt-4o-mini": 128000,
+        "gpt-4-turbo": 128000,
+        "gpt-4": 8192,
+        "gpt-3.5": 16385,
+        "claude-3": 200000,
+        "claude-3.5": 200000,
+        "claude-sonnet": 200000,
+        "claude-opus": 200000,
+    }
+
+    def _get_model_context_window(self) -> int:
+        """Guess the current model's context window size from the model name."""
+        model_id = self._model_configs.get("default", {}).get("model", "")
+        model_lower = model_id.lower()
+        # Try exact prefix match
+        for prefix, window in self._DEFAULT_CONTEXT_WINDOWS.items():
+            if prefix in model_lower:
+                return window
+        # Fallback: 128k is a safe default for modern models
+        return 128000
+
+    def _estimate_overhead_tokens(
+        self,
+        system_prompt: str,
+        tool_definitions: Optional[List[Dict[str, Any]]],
+    ) -> int:
+        """
+        Estimate the token cost of system prompt + tool definitions.
+
+        These are sent every turn and must be reserved from the history budget.
+        """
+        total = MessageHistory.estimate_tokens(system_prompt) + 4
+        if tool_definitions:
+            import json
+            tools_json = json.dumps(tool_definitions, ensure_ascii=False)
+            total += MessageHistory.estimate_tokens(tools_json) + 4
+        # Reserve space for output tokens
+        output_reserve = self.config.provider.max_tokens or 4096
+        return total + output_reserve
+
+    def _resolve_history_budget(self, overhead_tokens: int) -> Optional[int]:
+        """
+        Resolve the effective token budget for conversation history.
+
+        - If max_context_tokens > 0: use that value directly
+        - If max_context_tokens is 0, None, or not set: calculate as 70% of
+          model context window, minus overhead
+        - Returns None only if we truly can't determine any window (fallback: 128k)
+        """
+        configured = self.config.agent.max_context_tokens
+        if configured and isinstance(configured, (int, float)) and configured > 0:
+            # User explicitly set a budget — use it as-is (they control their own overhead)
+            return int(configured)
+
+        # Auto mode: use 70% of model context window, minus overhead
+        window = self._get_model_context_window()
+        budget = int(window * 0.70) - overhead_tokens
+        if budget < 2000:
+            budget = 2000  # Minimum usable budget
+        logger.debug(
+            "Auto history budget: model_window=%d, overhead=%d, budget=%d",
+            window, overhead_tokens, budget,
+        )
+        return budget
 
     def _stream_response(self, response: LLMResponse) -> Iterator[str]:
         """
@@ -603,7 +714,19 @@ class Agent:
 
             # --- Serialise result for the API -----------------------------
             # Tool content must be a plain string for the OpenAI API.
+            # Truncate excessively large results to avoid context overflow.
             result_content = tool_result.to_json()
+            MAX_TOOL_RESULT_CHARS = 30000  # ~7500 tokens, safe per-message limit
+            if len(result_content) > MAX_TOOL_RESULT_CHARS:
+                truncated_len = len(result_content) - MAX_TOOL_RESULT_CHARS
+                result_content = (
+                    result_content[:MAX_TOOL_RESULT_CHARS]
+                    + f"\n\n... [TRUNCATED: {truncated_len} more characters omitted]"
+                )
+                logger.info(
+                    "Tool result for '%s' truncated from %d to %d chars",
+                    tool_name, len(result_content) + truncated_len, len(result_content),
+                )
 
             # --- Store in history -----------------------------------------
             tool_msg = Message.tool(

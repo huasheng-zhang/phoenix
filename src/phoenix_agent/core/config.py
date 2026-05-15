@@ -201,8 +201,9 @@ class AgentConfig:
     # Hard token budget for conversation history (excluding system prompt).
     # When set, old messages are trimmed to keep total tokens under this limit.
     # Uses a conservative estimate: ~1 token per 4 chars for English,
-    # ~1 token per 1.5 chars for CJK.  Default: None (no limit).
-    max_context_tokens: Optional[int] = None
+    # ~1 token per 1.5 chars for CJK.
+    # Default: 0 means auto-calculate based on model context window (70% budget).
+    max_context_tokens: int = 0
 
     # Memory system
     memory_enabled: bool = True
@@ -465,7 +466,7 @@ class Config:
             stream=file_section.get("stream", True),
             show_thinking=file_section.get("show_thinking", False),
             max_history_messages=file_section.get("max_history_messages"),
-            max_context_tokens=file_section.get("max_context_tokens"),
+            max_context_tokens=file_section.get("max_context_tokens") or 0,
             memory_enabled=file_section.get("memory_enabled", True),
             max_memory_tokens=file_section.get("max_memory_tokens", 2000),
             auto_save_threshold=file_section.get("auto_save_threshold", 0),

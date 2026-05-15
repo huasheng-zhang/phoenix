@@ -49,7 +49,8 @@ agent:
 
   # Context window management (prevent context overflow)
   # max_history_messages: 100          # Keep at most N messages in context
-  # max_context_tokens: 120000         # Hard token budget for history (estimate)
+  # max_context_tokens: 0             # 0 = auto (70% of model context window minus overhead).
+                                      # Set explicitly e.g. 100000 to override.
 
   # Memory system (persistent cross-session knowledge)
   # memory_enabled: true               # Enable/disable memory system
