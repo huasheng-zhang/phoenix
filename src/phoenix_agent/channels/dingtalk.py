@@ -174,20 +174,48 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
             if sender_id:
                 self._channel_ref._last_sender_id = sender_id
 
-        # ---- Handle file/image messages ----
-        if msg_type_raw in ("picture", "file") and self._openapi:
-            await self._handle_file_message(
-                incoming, raw_data, msg_type_raw,
-                sender_id, sender_name, conversation_id,
-            )
-            return
-
-        # ---- Handle text messages (default) ----
+        # ---- Extract text from incoming message ----
+        user_text = ""
         try:
             user_text = incoming.text.content.strip()
         except AttributeError:
-            user_text = ""
+            pass
 
+        # For richText messages, extract text from rich text content
+        if not user_text:
+            rich_text = getattr(incoming, "rich_text_content", None) or getattr(
+                incoming, "rich_text", None
+            )
+            if rich_text:
+                rich_list = getattr(rich_text, "rich_text_list", None)
+                if isinstance(rich_list, list):
+                    parts = []
+                    for item in rich_list:
+                        if isinstance(item, dict):
+                            t = item.get("text") or item.get("content") or ""
+                            if t:
+                                parts.append(t)
+                        elif isinstance(item, str):
+                            parts.append(item)
+                    user_text = " ".join(parts).strip()
+
+        # ---- Handle file/image messages ----
+        if msg_type_raw in ("picture", "file") and self._openapi:
+            file_desc = await self._handle_file_message(
+                incoming, raw_data, msg_type_raw,
+                sender_id, sender_name, conversation_id,
+            )
+            if file_desc:
+                if user_text:
+                    # Both file and accompanying text → merge
+                    user_text = f"{user_text}\n\n{file_desc}"
+                else:
+                    # Only file, no text → use file description
+                    user_text = file_desc
+            # If file_desc is None (file handling failed) and user_text exists,
+            # fall through to text processing below
+
+        # ---- Handle text messages (default) ----
         if not user_text:
             return
 
@@ -485,15 +513,20 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
         sender_id: str,
         sender_name: str,
         conversation_id: str = "",
-    ):
-        """Download file from DingTalk and pass info to the agent."""
+    ) -> Optional[str]:
+        """Download file from DingTalk and return a description string.
+
+        Returns:
+            A description string (e.g. "用户 XXX 发送了图片: xxx.png..."),
+            or None if the file could not be processed.
+        """
         try:
             content = self._extract_file_content(raw_data, msg_type_raw, incoming)
             if not content:
                 self._logger.warning(
                     "[dingtalk][stream] No file content in %s message", msg_type_raw
                 )
-                return
+                return None
 
             download_code = content.get("downloadCode", "")
             file_name = content.get("fileName", f"dingtalk_{msg_type_raw}")
@@ -502,7 +535,7 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 self._logger.warning(
                     "[dingtalk][stream] No downloadCode in %s message", msg_type_raw
                 )
-                return
+                return None
 
             # Download via OpenAPI
             file_bytes, actual_name = await self._openapi.download_file(
@@ -524,57 +557,24 @@ class _DingTalkStreamHandler(dingtalk_stream.AsyncChatbotHandler):
                 local_path, len(file_bytes), sender_name,
             )
 
-            # Describe file to agent
+            # Return description string (caller will dispatch to agent with text)
             is_image = msg_type_raw == "picture"
             if is_image:
-                desc = (
+                return (
                     f"[用户 {sender_name} 发送了一张图片: {actual_name}，"
                     f"已保存到 {local_path}，大小 {len(file_bytes)} 字节]"
                 )
-            else:
-                desc = (
-                    f"[用户 {sender_name} 发送了一个文件: {actual_name}，"
-                    f"已保存到 {local_path}，大小 {len(file_bytes)} 字节]"
-                )
-
-            # Run agent (per-conversation)
-            chat_key = f"conv:{conversation_id}" if conversation_id else f"user:{sender_id}"
-            agent = self._pool.get_agent(self._channel_name, chat_key)
-
-            try:
-                cancel_event = await self._pool.acquire_conversation_lock(
-                    self._channel_name, chat_key
-                )
-                loop = asyncio.get_event_loop()
-                response_text = await loop.run_in_executor(
-                    None, lambda: agent.run(desc, cancel_event=cancel_event),
-                )
-            except Exception as exc:
-                self._logger.exception("[dingtalk][stream] Agent error on file: %s", exc)
-                response_text = "⚠️ 处理文件时出错，请稍后重试"
-            finally:
-                self._pool.release_conversation_lock(
-                    self._channel_name, chat_key
-                )
-
-            reply_text = response_text or "文件已收到，但未生成回复。"
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, lambda: self.reply_text(reply_text, incoming)
+            return (
+                f"[用户 {sender_name} 发送了一个文件: {actual_name}，"
+                f"已保存到 {local_path}，大小 {len(file_bytes)} 字节]"
             )
 
         except ChannelAPIError as exc:
             self._logger.error("[dingtalk][stream] File API error: %s", exc)
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, lambda: self.reply_text("⚠️ 下载文件失败，请稍后重试", incoming)
-            )
+            return None
         except Exception as exc:
             self._logger.exception("[dingtalk][stream] File handling error: %s", exc)
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, lambda: self.reply_text("⚠️ 处理文件时出错，请稍后重试", incoming)
-            )
+            return None
 
     @staticmethod
     def _extract_file_content(

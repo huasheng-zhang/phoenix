@@ -48,6 +48,7 @@ def load_builtin_tools(registry: ToolRegistry) -> None:
     _register_file_sharing_tools(registry)
     _register_scheduler_tools(registry)
     _register_agent_tools(registry)
+    _register_document_tools(registry)
 
 
 # ---------------------------------------------------------------------------
@@ -1920,3 +1921,441 @@ def _register_agent_tools(registry: ToolRegistry) -> None:
           },
           "required": ["role", "question"]},
          ToolCategory.UTILITY, ask_agent)
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENT PROCESSING TOOLS
+# ---------------------------------------------------------------------------
+
+def _doc_missing_dep(lib_name: str, install_cmd: str) -> str:
+    """Return a ToolResult JSON for a missing document-processing dependency."""
+    return ToolResult(
+        success=False,
+        content="",
+        error=f"Missing dependency: {lib_name}. Install with: {install_cmd}",
+    ).to_json()
+
+
+def _register_document_tools(registry: ToolRegistry) -> None:
+    """Register document processing tools (Excel, PDF, Word, PPT).
+
+    These tools are only usable when the corresponding optional dependencies
+    are installed.  Install them with:  pip install 'phoenix-agent[doc]'
+    """
+
+    # ---- read_excel -------------------------------------------------------
+    def read_excel(file_path: str,
+                   sheet_name: str = "",
+                   max_rows: int = 50,
+                   start_row: int = 0) -> str:
+        """
+        Read an Excel spreadsheet and return data as Markdown tables.
+
+        Supports .xlsx (openpyxl) and .xls (xlrd).  For large files, use
+        max_rows and start_row to paginate.
+        """
+        try:
+            import openpyxl  # noqa: F401
+        except ImportError:
+            return _doc_missing_dep("openpyxl",
+                                    "pip install 'phoenix-agent[doc]'")
+
+        path, err = _safe_path(file_path)
+        if err:
+            return ToolResult(success=False, content="", error=err).to_json()
+        if not path or not path.is_file():
+            return ToolResult(success=False, content="",
+                              error=f"File not found: {file_path}").to_json()
+
+        try:
+            suffix = path.suffix.lower()
+            if suffix == ".xls":
+                try:
+                    import xlrd
+                except ImportError:
+                    return _doc_missing_dep("xlrd", "pip install xlrd")
+                wb = xlrd.open_workbook(str(path))
+                _sheets = wb.sheet_names()
+            else:
+                wb = openpyxl.load_workbook(
+                    str(path), read_only=True, data_only=True)
+                _sheets = wb.sheetnames
+
+            if not _sheets:
+                return ToolResult(success=True,
+                                  content="Workbook is empty (no sheets).").to_json()
+
+            # Determine which sheet(s) to read
+            if sheet_name:
+                targets = [sheet_name]
+            else:
+                targets = _sheets
+
+            output_parts = []
+            for sname in targets:
+                if sname not in _sheets:
+                    output_parts.append(
+                        f"Sheet '{sname}' not found. Available: {_sheets}")
+                    continue
+
+                if suffix == ".xls":
+                    ws = wb.sheet_by_name(sname)
+                    total_rows = ws.nrows
+                    rows = []
+                    for i in range(start_row, min(start_row + max_rows, ws.nrows)):
+                        rows.append([ws.cell_value(i, j)
+                                     for j in range(ws.ncols)])
+                else:
+                    ws = wb[sname]
+                    rows = []
+                    count = 0
+                    for row in ws.iter_rows(values_only=True):
+                        if count < start_row:
+                            count += 1
+                            continue
+                        if count >= start_row + max_rows:
+                            break
+                        rows.append(list(row))
+                        count += 1
+                    total_rows = count + (max_rows if count == max_rows else 0)
+
+                if not rows:
+                    output_parts.append(f"### Sheet: {sname}\n(empty)")
+                    continue
+
+                # Format as Markdown table
+                md_lines = [f"### Sheet: {sname} "
+                            f"({start_row + 1}–{start_row + len(rows)}"
+                            f"/{total_rows} rows)"]
+                md_lines.append("")
+                md_lines.append("| " + " | ".join(
+                    str(c) if c is not None else "" for c in rows[0]) + " |")
+                md_lines.append("| " + " | ".join("---" for _ in rows[0]) + " |")
+                for row in rows[1:]:
+                    md_lines.append("| " + " | ".join(
+                        str(c) if c is not None else "" for c in row) + " |")
+                output_parts.append("\n".join(md_lines))
+
+            meta = {
+                "sheets": _sheets,
+                "shown_sheet": sheet_name or "all",
+                "rows_per_sheet": max_rows,
+                "start_row": start_row,
+            }
+            return ToolResult(
+                success=True,
+                content="\n\n".join(output_parts),
+                metadata=meta,
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Error reading Excel: {exc}").to_json()
+
+    _reg(registry, "read_excel",
+         "Read an Excel (.xlsx/.xls) file and return data as Markdown tables. "
+         "Supports selecting specific sheets and paginating large files.",
+         {"type": "object",
+          "properties": {
+              "file_path":  {"type": "string",
+                             "description": "Path to the Excel file (.xlsx or .xls)"},
+              "sheet_name": {"type": "string",
+                             "description": "Sheet name to read (default: all sheets)"},
+              "max_rows":   {"type": "integer",
+                             "description": "Max rows per sheet (default 50)"},
+              "start_row":  {"type": "integer",
+                             "description": "Start row index, 0-based (default 0)"},
+          },
+          "required": ["file_path"]},
+         ToolCategory.UTILITY, read_excel)
+
+    # ---- read_pdf ---------------------------------------------------------
+    def read_pdf(file_path: str,
+                 pages: str = "",
+                 max_chars: int = 20000) -> str:
+        """
+        Extract text and tables from a PDF file.
+
+        Args:
+            file_path: Path to the PDF file.
+            pages:     Page range, e.g. '1-5', '1,3,5', '10-'. Default: all.
+            max_chars: Maximum characters to return (default 20000).
+        """
+        try:
+            import pdfplumber  # noqa: F401
+        except ImportError:
+            return _doc_missing_dep("pdfplumber",
+                                    "pip install 'phoenix-agent[doc]'")
+
+        path, err = _safe_path(file_path)
+        if err:
+            return ToolResult(success=False, content="", error=err).to_json()
+        if not path or not path.is_file():
+            return ToolResult(success=False, content="",
+                              error=f"File not found: {file_path}").to_json()
+
+        def _parse_page_range(s: str, total: int):
+            """Parse '1-5', '1,3,5', '10-', etc. into a list of 0-based indices."""
+            if not s:
+                return list(range(total))
+            indices = set()
+            for part in s.split(","):
+                part = part.strip()
+                if "-" in part:
+                    start_s, end_s = part.split("-", 1)
+                    start = int(start_s) - 1 if start_s.strip() else 0
+                    end = int(end_s) if end_s.strip() else total
+                    indices.update(range(max(0, start), min(end, total)))
+                else:
+                    idx = int(part) - 1
+                    if 0 <= idx < total:
+                        indices.add(idx)
+            return sorted(indices)
+
+        try:
+            with pdfplumber.open(str(path)) as pdf:
+                total_pages = len(pdf.pages)
+                page_indices = _parse_page_range(pages, total_pages)
+
+                output_parts = [f"PDF: {path.name} "
+                                f"({total_pages} pages, "
+                                f"showing {len(page_indices)})"]
+
+                all_text = ""
+                for idx in page_indices:
+                    page = pdf.pages[idx]
+                    text = page.extract_text() or ""
+                    tables = page.extract_tables() or []
+                    section = f"\n--- Page {idx + 1} ---\n"
+                    if text:
+                        section += text + "\n"
+                    if tables:
+                        for ti, table in enumerate(tables):
+                            section += f"\nTable {ti + 1}:\n"
+                            for row in table:
+                                section += "| " + " | ".join(
+                                    str(c) if c else "" for c in row) + " |\n"
+                    output_parts.append(section)
+                    all_text += text
+
+                # Truncate if needed
+                content = "\n".join(output_parts)
+                if len(all_text) > max_chars:
+                    content += (f"\n\n[Content truncated at {max_chars} "
+                                "characters. Use 'pages' parameter to "
+                                "select specific pages.]")
+
+                meta = {
+                    "total_pages": total_pages,
+                    "shown_pages": len(page_indices),
+                    "total_chars": len(all_text),
+                }
+                return ToolResult(success=True, content=content,
+                                  metadata=meta).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Error reading PDF: {exc}").to_json()
+
+    _reg(registry, "read_pdf",
+         "Extract text and tables from a PDF file. Supports page selection "
+         "and content truncation for large documents.",
+         {"type": "object",
+          "properties": {
+              "file_path": {"type": "string",
+                            "description": "Path to the PDF file"},
+              "pages":     {"type": "string",
+                            "description": "Page range: '1-5', '1,3,5', "
+                                          "'10-' (default: all pages)"},
+              "max_chars": {"type": "integer",
+                            "description": "Max characters to return "
+                                          "(default 20000)"},
+          },
+          "required": ["file_path"]},
+         ToolCategory.UTILITY, read_pdf)
+
+    # ---- read_docx --------------------------------------------------------
+    def read_docx(file_path: str,
+                  max_paragraphs: int = 100,
+                  include_tables: bool = True) -> str:
+        """
+        Read a Word (.docx) document and return paragraphs and tables.
+
+        Args:
+            file_path:        Path to the .docx file.
+            max_paragraphs:   Max paragraphs to extract (default 100).
+            include_tables:   Whether to extract tables (default true).
+        """
+        try:
+            from docx import Document  # noqa: F401
+        except ImportError:
+            return _doc_missing_dep("python-docx",
+                                    "pip install 'phoenix-agent[doc]'")
+
+        path, err = _safe_path(file_path)
+        if err:
+            return ToolResult(success=False, content="", error=err).to_json()
+        if not path or not path.is_file():
+            return ToolResult(success=False, content="",
+                              error=f"File not found: {file_path}").to_json()
+
+        try:
+            doc = Document(str(path))
+            parts = [f"Document: {path.name} "
+                     f"({len(doc.paragraphs)} paragraphs, "
+                     f"{len(doc.tables)} tables)"]
+
+            # Paragraphs
+            parts.append("\n## Paragraphs")
+            count = 0
+            for para in doc.paragraphs:
+                if not para.text.strip():
+                    continue
+                style = para.style.name if para.style else ""
+                prefix = ""
+                # Detect headings
+                if style and "Heading" in style:
+                    level = style.replace("Heading ", "").replace("heading", "")
+                    try:
+                        lvl = int(level)
+                        prefix = "#" * min(lvl, 6) + " "
+                    except ValueError:
+                        prefix = "## "
+                parts.append(f"{prefix}{para.text}")
+                count += 1
+                if count >= max_paragraphs:
+                    parts.append(f"\n[... {len(doc.paragraphs) - count} "
+                                 "more paragraphs omitted. "
+                                 "Increase max_paragraphs to see more.]")
+                    break
+
+            # Tables
+            if include_tables and doc.tables:
+                parts.append(f"\n## Tables ({len(doc.tables)} total)")
+                for ti, table in enumerate(doc.tables):
+                    parts.append(f"\n### Table {ti + 1}")
+                    for ri, row in enumerate(table.rows):
+                        cells = [cell.text for cell in row.cells]
+                        parts.append("| " + " | ".join(cells) + " |")
+                        if ri == 0:
+                            parts.append("| " + " | ".join(
+                                "---" for _ in cells) + " |")
+
+            meta = {
+                "total_paragraphs": len(doc.paragraphs),
+                "total_tables": len(doc.tables),
+                "shown_paragraphs": min(count, len(doc.paragraphs)),
+            }
+            return ToolResult(success=True, content="\n".join(parts),
+                              metadata=meta).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Error reading Word: {exc}").to_json()
+
+    _reg(registry, "read_docx",
+         "Read a Word (.docx) document and extract paragraphs and tables. "
+         "Supports heading detection and content pagination.",
+         {"type": "object",
+          "properties": {
+              "file_path":       {"type": "string",
+                                  "description": "Path to the Word file (.docx)"},
+              "max_paragraphs":  {"type": "integer",
+                                  "description": "Max paragraphs to extract "
+                                                "(default 100)"},
+              "include_tables":  {"type": "boolean",
+                                  "description": "Include table extraction "
+                                                "(default true)"},
+          },
+          "required": ["file_path"]},
+         ToolCategory.UTILITY, read_docx)
+
+    # ---- read_pptx --------------------------------------------------------
+    def read_pptx(file_path: str,
+                  max_slides: int = 50) -> str:
+        """
+        Read a PowerPoint (.pptx) file and extract slide content.
+
+        Extracts text from all shapes on each slide, including notes.
+        """
+        try:
+            from pptx import Presentation  # noqa: F401
+        except ImportError:
+            return _doc_missing_dep("python-pptx",
+                                    "pip install 'phoenix-agent[doc]'")
+
+        path, err = _safe_path(file_path)
+        if err:
+            return ToolResult(success=False, content="", error=err).to_json()
+        if not path or not path.is_file():
+            return ToolResult(success=False, content="",
+                              error=f"File not found: {file_path}").to_json()
+
+        try:
+            prs = Presentation(str(path))
+            total = len(prs.slides)
+            output = [f"Presentation: {path.name} "
+                      f"({total} slides)"]
+
+            for i, slide in enumerate(prs.slides):
+                if i >= max_slides:
+                    output.append(f"\n[... {total - max_slides} "
+                                  "more slides omitted.]")
+                    break
+
+                output.append(f"\n### Slide {i + 1}")
+                has_content = False
+
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        for para in shape.text_frame.paragraphs:
+                            text = para.text.strip()
+                            if text:
+                                # Detect bullet/list
+                                if para.level > 0:
+                                    output.append("  " * para.level
+                                                  + "- " + text)
+                                else:
+                                    output.append(text)
+                                has_content = True
+
+                    # Tables inside slides
+                    if shape.has_table:
+                        table = shape.table
+                        output.append("\n| " + " | ".join(
+                            cell.text for cell in table.rows[0].cells) + " |")
+                        output.append("| " + " | ".join(
+                            "---" for _ in table.rows[0].cells) + " |")
+                        for row in table.rows[1:]:
+                            output.append("| " + " | ".join(
+                                cell.text for cell in row.cells) + " |")
+                        has_content = True
+
+                if not has_content:
+                    output.append("(no text content)")
+
+                # Notes
+                if slide.has_notes_slide:
+                    notes = slide.notes_slide.notes_text_frame.text.strip()
+                    if notes:
+                        output.append(f"\n> Notes: {notes[:200]}")
+
+            meta = {
+                "total_slides": total,
+                "shown_slides": min(len(prs.slides), max_slides),
+            }
+            return ToolResult(success=True, content="\n".join(output),
+                              metadata=meta).to_json()
+        except Exception as exc:
+            return ToolResult(success=False, content="",
+                              error=f"Error reading PPT: {exc}").to_json()
+
+    _reg(registry, "read_pptx",
+         "Read a PowerPoint (.pptx) file and extract text from slides, "
+         "including shapes, tables, and speaker notes.",
+         {"type": "object",
+          "properties": {
+              "file_path":  {"type": "string",
+                             "description": "Path to the PowerPoint file (.pptx)"},
+              "max_slides": {"type": "integer",
+                             "description": "Max slides to extract (default 50)"},
+          },
+          "required": ["file_path"]},
+         ToolCategory.UTILITY, read_pptx)
